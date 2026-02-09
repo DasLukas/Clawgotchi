@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h2>Initial Setup Wizard</h2>
+  <form method="post" action="/setup" class="stack">
+    <label>
+      Pet name
+      <input type="text" name="pet_name" required placeholder="Name your pet" />
+    </label>
+
+    <label>
+      Theme
+      <select name="theme_id">
+        {% for theme in themes %}
+          <option value="{{ theme.theme_id }}">{{ theme.name }} ({{ theme.version }})</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <fieldset>
+      <legend>Enable plugins</legend>
+      {% for plugin in plugins %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="plugin_ids" value="{{ plugin.plugin_id }}" {% if plugin.enabled %}checked{% endif %} />
+        <span>{{ plugin.name }}: {{ plugin.description }}</span>
+      </label>
+      {% endfor %}
+    </fieldset>
+
+    <label>
+      Hardware profile
+      <select name="hardware_profile">
+        {% for profile in hardware_profiles %}
+          <option value="{{ profile }}">{{ profile }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="submit">Complete setup</button>
+  </form>
+</section>
+{% endblock %}

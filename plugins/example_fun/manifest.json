@@ -1,0 +1,15 @@
+{
+  "id": "example_fun",
+  "name": "Example Fun Plugin",
+  "version": "0.1.0",
+  "description": "Adds a wave command, a custom emotion signal, and a mini game placeholder.",
+  "entrypoint": "plugin.py",
+  "class_name": "ExampleFunPlugin",
+  "capabilities": [
+    "commands",
+    "emotions",
+    "mini-games",
+    "hardware-drivers",
+    "ui-extensions"
+  ]
+}

@@ -1,0 +1,1 @@
+"""Clawgotchi application package."""

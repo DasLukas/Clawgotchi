@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <div class="split-header">
+    <h2>Plugin Registry</h2>
+    <form method="post" action="/plugins/rescan">
+      <button type="submit">Rescan plugins</button>
+    </form>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Version</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for plugin in plugins %}
+      <tr>
+        <td>{{ plugin.plugin_id }}</td>
+        <td>{{ plugin.name }}</td>
+        <td>{{ plugin.version }}</td>
+        <td>{{ "enabled" if plugin.enabled else "disabled" }}</td>
+        <td>
+          {% if plugin.enabled %}
+          <form method="post" action="/plugins/{{ plugin.plugin_id }}/disable">
+            <button type="submit">Disable</button>
+          </form>
+          {% else %}
+          <form method="post" action="/plugins/{{ plugin.plugin_id }}/enable">
+            <button type="submit">Enable</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

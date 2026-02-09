@@ -1,0 +1,15 @@
+:root {
+  --theme-accent: #5f4d2f;
+  --theme-surface: #fffaf1;
+}
+
+.card {
+  border-color: #cfbea0;
+  background: var(--theme-surface);
+}
+
+h1,
+h2,
+strong {
+  color: var(--theme-accent);
+}

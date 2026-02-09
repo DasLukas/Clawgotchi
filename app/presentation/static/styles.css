@@ -1,0 +1,131 @@
+:root {
+  --background: #f6f2e8;
+  --surface: #fffdf8;
+  --text: #2f2617;
+  --muted: #7f6f58;
+  --accent: #bd7a2f;
+  --accent-strong: #8f5424;
+  --border: #e2d6bf;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #fff6df 0%, var(--background) 70%);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  background: linear-gradient(90deg, #f2e4c8, #f5e8ce);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.topbar a {
+  color: var(--accent-strong);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 18px rgba(88, 60, 30, 0.08);
+}
+
+.grid-two {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.split-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-strong);
+}
+
+input,
+select {
+  margin-top: 0.3rem;
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  padding: 0.6rem;
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .topbar nav {
+    flex-wrap: wrap;
+  }
+}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <div class="split-header">
+    <h2>Theme Registry</h2>
+    <form method="post" action="/themes/rescan">
+      <button type="submit">Rescan themes</button>
+    </form>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Version</th>
+        <th>Preview</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for theme in themes %}
+      <tr>
+        <td>{{ theme.theme_id }}</td>
+        <td>{{ theme.name }}</td>
+        <td>{{ theme.version }}</td>
+        <td>{{ theme.manifest.preview }}</td>
+        <td>{{ "active" if theme.active else "inactive" }}</td>
+        <td>
+          {% if not theme.active %}
+          <form method="post" action="/themes/{{ theme.theme_id }}/activate">
+            <button type="submit">Activate</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+{% if theme_stylesheet %}
+<link rel="stylesheet" href="/theme-assets/{{ status.state.active_theme_id }}/{{ theme_stylesheet }}" />
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="grid-two">
+  <article class="card">
+    <h2>Pet state</h2>
+    <p><strong>Name:</strong> {{ status.state.pet.name }}</p>
+    <p><strong>Emotion:</strong> {{ status.state.pet.emotion }}</p>
+    <p><strong>Sleeping:</strong> {{ status.state.pet.sleeping }}</p>
+    <p><strong>State version:</strong> {{ status.state_version }}</p>
+    <p><strong>Theme:</strong> {{ status.state.active_theme_id }}</p>
+    <p><strong>Plugins:</strong> {{ status.state.enabled_plugin_ids|join(", ") if status.state.enabled_plugin_ids else "none" }}</p>
+  </article>
+
+  <article class="card">
+    <h2>Needs</h2>
+    <ul>
+      <li>Hunger: {{ status.state.pet.needs.hunger }}</li>
+      <li>Energy: {{ status.state.pet.needs.energy }}</li>
+      <li>Social: {{ status.state.pet.needs.social }}</li>
+      <li>Cleanliness: {{ status.state.pet.needs.cleanliness }}</li>
+    </ul>
+  </article>
+</section>
+
+<section class="card">
+  <h2>Commands</h2>
+  <div class="button-row">
+    {% for command in ["feed", "play", "scratch", "sleep", "wake", "status"] %}
+      <form method="post" action="/dashboard/command">
+        <input type="hidden" name="command_type" value="{{ command }}" />
+        <input type="hidden" name="intensity" value="0.8" />
+        <button type="submit">{{ command }}</button>
+      </form>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
