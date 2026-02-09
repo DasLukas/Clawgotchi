@@ -6,6 +6,7 @@ REMOTE="${CLWG_REMOTE:-origin}"
 BRANCH="${CLWG_BRANCH:-main}"
 VENV_PIP="${PROJECT_ROOT}/.venv/bin/pip"
 SERVICE_NAME="${CLWG_SERVICE_NAME:-clawgotchi.service}"
+APP_USER="${CLWG_USER:-clawgotchi}"
 
 log() {
   printf "[%s] %s\n" "$(date "+%Y-%m-%d %H:%M:%S")" "$*"
@@ -17,11 +18,26 @@ die() {
 }
 
 run_git() {
-  git -C "${PROJECT_ROOT}" "$@"
+  run_as_app "git -C '${PROJECT_ROOT}' $*"
+}
+
+run_as_app() {
+  local cmd="$1"
+  if [[ "${EUID}" -eq 0 ]]; then
+    su - "${APP_USER}" -c "${cmd}"
+  else
+    bash -lc "${cmd}"
+  fi
 }
 
 if [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
   die "Kein Git-Repository in ${PROJECT_ROOT} gefunden."
+fi
+
+if [[ "${EUID}" -eq 0 ]]; then
+  if ! id -u "${APP_USER}" >/dev/null 2>&1; then
+    die "App-User '${APP_USER}' existiert nicht. Optional: CLWG_USER setzen."
+  fi
 fi
 
 if ! run_git diff --quiet || ! run_git diff --cached --quiet; then
@@ -35,7 +51,7 @@ run_git pull --ff-only "${REMOTE}" "${BRANCH}"
 
 if [[ -x "${VENV_PIP}" ]]; then
   log "Installiere/aktualisiere Python-Abhaengigkeiten."
-  "${VENV_PIP}" install -e "${PROJECT_ROOT}"
+  run_as_app "'${VENV_PIP}' install -e '${PROJECT_ROOT}'"
 else
   die "pip im Virtualenv nicht gefunden: ${VENV_PIP}"
 fi

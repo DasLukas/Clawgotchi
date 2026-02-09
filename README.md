@@ -253,6 +253,7 @@ Hinweis:
 
 - Das Skript bricht bei lokalen Git-Aenderungen bewusst ab (kein automatisches Merge).
 - Wenn `update.sh` ohne root ausgefuehrt wird, wird der Service nicht neu gestartet.
+- Git/SSH-Schritte laufen mit dem App-User `clawgotchi` (override via `CLWG_USER=<user>`).
 - Fuer Update inklusive Service-Neustart:
 
 ```bash
