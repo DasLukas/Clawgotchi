@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.domain.events import DomainEvent
+from app.domain.models.pet_state import PetState
 from app.domain.value_objects import PetCommand, clamp, utc_now
 
 
@@ -168,24 +169,31 @@ class Pet:
 @dataclass(slots=True)
 class DeviceState:
     pet: Pet
+    pet_state: PetState
     schema_version: int = 1
     state_version: int = 0
-    active_theme_id: str = "classic"
+    active_theme_id: str = "default"
     enabled_plugin_ids: list[str] = field(default_factory=list)
     hardware_profile: str = "dummy"
     updated_at: datetime = field(default_factory=utc_now)
 
     @classmethod
     def create(cls, pet_name: str) -> "DeviceState":
-        return cls(pet=Pet.create(pet_name))
+        pet = Pet.create(pet_name)
+        return cls(
+            pet=pet,
+            pet_state=PetState.create(name=pet.name, emotion=pet.emotion.value),
+        )
 
     def apply_tick(self) -> list[DomainEvent]:
         events = self.pet.apply_tick()
+        self.pet_state.sync_identity(name=self.pet.name, emotion=self.pet.emotion.value)
         self.bump_version()
         return events
 
     def apply_command(self, command: PetCommand) -> list[DomainEvent]:
         events = self.pet.apply_command(command)
+        self.pet_state.sync_identity(name=self.pet.name, emotion=self.pet.emotion.value)
         self.bump_version()
         return events
 
@@ -202,18 +210,26 @@ class DeviceState:
             "hardware_profile": self.hardware_profile,
             "updated_at": self.updated_at.isoformat(),
             "pet": self.pet.to_dict(),
+            "pet_state": self.pet_state.to_dict(),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "DeviceState":
         updated = payload.get("updated_at")
         updated_at = datetime.fromisoformat(updated) if isinstance(updated, str) else utc_now()
+        pet = Pet.from_dict(payload.get("pet", {}))
+        pet_state = PetState.from_dict(
+            payload=payload.get("pet_state", {}),
+            fallback_name=pet.name,
+            fallback_emotion=pet.emotion.value,
+        )
         return cls(
             schema_version=int(payload.get("schema_version", 1)),
             state_version=int(payload.get("state_version", 0)),
-            active_theme_id=str(payload.get("active_theme_id", "classic")),
+            active_theme_id=str(payload.get("active_theme_id", "default")),
             enabled_plugin_ids=list(payload.get("enabled_plugin_ids", [])),
             hardware_profile=str(payload.get("hardware_profile", "dummy")),
             updated_at=updated_at,
-            pet=Pet.from_dict(payload.get("pet", {})),
+            pet=pet,
+            pet_state=pet_state,
         )

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
@@ -9,6 +8,7 @@ from app.application.services import (
     InitializeDeviceService,
     PluginRuntime,
     PluginService,
+    RenderService,
     SendCommandService,
     StateTransferService,
     StatusService,
@@ -17,7 +17,8 @@ from app.application.services import (
 )
 from app.config import ConfigResolver, RuntimeConfig
 from app.infrastructure.database import Database
-from app.infrastructure.hardware import DummyAudioDriver, DummyDisplayDriver, DummyInputDriver, DummySensorDriver
+from app.infrastructure.display.factory import create_display_driver
+from app.infrastructure.hardware import DummyAudioDriver, DummyInputDriver, DummySensorDriver
 from app.infrastructure.logging import configure_logging
 from app.infrastructure.plugin_loader import FileSystemPluginLoader
 from app.infrastructure.repositories import (
@@ -27,6 +28,8 @@ from app.infrastructure.repositories import (
     SqlAlchemyThemeRepository,
 )
 from app.infrastructure.theme_loader import FileSystemThemeLoader
+from app.infrastructure.themes.theme_loader import ThemeLoader
+from config.settings import DisplaySettings
 
 
 class ApplicationContainer:
@@ -44,14 +47,31 @@ class ApplicationContainer:
         configure_logging(self.config.log_level)
         self._ensure_directories()
 
+        self.display_settings = DisplaySettings(
+            display_type=self.config.display_type,
+            display_vendor=self.config.display_vendor,
+            display_rotation=self.config.display_rotation,
+            display_use_partial=self.config.display_use_partial,
+            display_dithering=self.config.display_dithering,
+            display_debug_write_png=self.config.display_debug_write_png,
+            display_debug_png_path=self.config.display_debug_png_path,
+        )
+
         self.state_repository = SqlAlchemyStateRepository(self.database.session_factory)
         self.plugin_repository = SqlAlchemyPluginRepository(self.database.session_factory)
         self.theme_repository = SqlAlchemyThemeRepository(self.database.session_factory)
 
         self.plugin_loader = FileSystemPluginLoader(self.config.plugin_directory)
         self.theme_loader = FileSystemThemeLoader(self.config.theme_directory)
+        self.theme_asset_loader = ThemeLoader(self.config.theme_directory)
 
-        self.display_driver = DummyDisplayDriver()
+        self.display_driver = create_display_driver(self.display_settings)
+        self.render_service = RenderService(
+            theme_loader=self.theme_asset_loader,
+            display_driver=self.display_driver,
+            default_theme_id="default",
+        )
+
         self.input_driver = DummyInputDriver()
         self.audio_driver = DummyAudioDriver()
         self.sensor_driver = DummySensorDriver()
@@ -66,14 +86,14 @@ class ApplicationContainer:
             state_repository=self.state_repository,
             settings_repository=self.settings_repository,
             plugin_runtime=self.plugin_runtime,
-            display_driver=self.display_driver,
+            render_service=self.render_service,
             lock=self.state_lock,
         )
         self.tick_loop_service = TickLoopService(
             state_repository=self.state_repository,
             settings_repository=self.settings_repository,
             plugin_runtime=self.plugin_runtime,
-            display_driver=self.display_driver,
+            render_service=self.render_service,
             lock=self.state_lock,
         )
         self.send_command_service = SendCommandService(self.command_queue, timeout_seconds=3.0)
@@ -124,12 +144,9 @@ class ApplicationContainer:
         self.theme_service.rescan()
 
         themes = self.theme_service.list_themes()
-        active_theme_id = self.theme_repository.get_active_id()
-        if themes and active_theme_id is None:
-            self.theme_repository.activate(themes[0]["theme_id"])
-
         state = self.state_repository.load_or_create(self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
-        if themes and state.active_theme_id not in {theme["theme_id"] for theme in themes}:
+        available_theme_ids = {theme["theme_id"] for theme in themes}
+        if themes and state.active_theme_id not in available_theme_ids:
             state.active_theme_id = themes[0]["theme_id"]
             self.state_repository.save_state(
                 state=state,
@@ -137,6 +154,11 @@ class ApplicationContainer:
                 command_id=None,
                 events=[],
             )
+
+        if themes and state.active_theme_id in available_theme_ids:
+            self.theme_repository.activate(state.active_theme_id)
+
+        self.render_service.set_theme(state.active_theme_id)
 
         self._tasks = [
             asyncio.create_task(self.command_worker.run(), name="command-worker"),
@@ -155,3 +177,4 @@ class ApplicationContainer:
                 pass
 
         await self.plugin_runtime.shutdown()
+        self.display_driver.sleep()

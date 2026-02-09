@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.application.services import SetupRequest
@@ -45,7 +45,7 @@ async def setup_page(request: Request, container=Depends(get_container)):
 async def setup_submit(
     container=Depends(get_container),
     pet_name: str = Form(...),
-    theme_id: str = Form("classic"),
+    theme_id: str = Form("default"),
     hardware_profile: str = Form("dummy"),
     plugin_ids: list[str] = Form(default=[]),
 ) -> RedirectResponse:
@@ -148,3 +148,11 @@ async def themes_rescan(container=Depends(get_container)) -> RedirectResponse:
 async def themes_activate(theme_id: str, container=Depends(get_container)) -> RedirectResponse:
     container.theme_service.activate_theme(theme_id)
     return RedirectResponse(url="/themes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/debug/frame")
+async def debug_frame(container=Depends(get_container)) -> Response:
+    payload = container.render_service.get_last_frame_png()
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No frame has been rendered yet.")
+    return Response(content=payload, media_type="image/png")

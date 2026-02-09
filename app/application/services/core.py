@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import logging
+import time
 from typing import Any
 
 from app.application.command_processing import CommandQueueProtocol
 from app.application.interfaces import (
-    DisplayDriverProtocol,
     PluginContext,
     PluginLoaderProtocol,
     PluginRepositoryProtocol,
@@ -16,6 +16,7 @@ from app.application.interfaces import (
     ThemeLoaderProtocol,
     ThemeRepositoryProtocol,
 )
+from app.application.services.render_service import RenderService
 from app.domain.entities import DeviceState
 from app.domain.events import DomainEvent
 from app.domain.snapshots import StateSnapshot
@@ -117,29 +118,71 @@ class CommandHandlerService:
         state_repository: StateRepositoryProtocol,
         settings_repository: SettingsRepositoryProtocol,
         plugin_runtime: PluginRuntime,
-        display_driver: DisplayDriverProtocol,
+        render_service: RenderService,
         lock: asyncio.Lock,
     ) -> None:
         self._state_repository = state_repository
         self._settings_repository = settings_repository
         self._plugin_runtime = plugin_runtime
-        self._display_driver = display_driver
+        self._render_service = render_service
         self._lock = lock
 
     async def handle(self, command: PetCommand) -> int:
         async with self._lock:
             default_pet_name = self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
             state = self._state_repository.load_or_create(default_pet_name)
+
+            now_ts = time.time()
             events = state.apply_command(command)
             events.extend(await self._plugin_runtime.on_command(state, command))
+            state.pet_state.sync_identity(name=state.pet.name, emotion=state.pet.emotion.value)
+
+            force_render = False
+            if command.type == "scratch":
+                self._render_service.set_theme(state.active_theme_id)
+                scratch_duration_ms = self._render_service.get_animation_duration_ms("scratch")
+                if scratch_duration_ms <= 0:
+                    scratch_duration_ms = RenderService.SCRATCH_DEFAULT_DURATION_MS
+                state.pet_state.emotion = "happy"
+                state.pet_state.set_temporary_animation("scratch", scratch_duration_ms, now_ts=now_ts)
+                force_render = True
+            else:
+                state.pet_state.ensure_idle_if_expired(now_ts)
+
+            rendered = self._render_if_needed(state=state, now_ts=now_ts, force=force_render)
+            if rendered:
+                events.append(
+                    DomainEvent(
+                        event_type="frame_rendered",
+                        payload={
+                            "animation": state.pet_state.current_animation,
+                            "source": "command",
+                        },
+                    )
+                )
+
             state_version = self._state_repository.save_state(
                 state=state,
                 source=f"command:{command.type}",
                 command_id=command.command_id,
                 events=events,
             )
-            await self._display_driver.render(state, state.active_theme_id)
             return state_version
+
+    def _render_if_needed(self, state: DeviceState, now_ts: float, force: bool = False) -> bool:
+        self._render_service.set_theme(state.active_theme_id)
+        try:
+            if not force:
+                decision = self._render_service.should_render(state.pet_state, now_ts=now_ts)
+                if not decision.should_render:
+                    return False
+
+            image = self._render_service.render_frame(state.pet_state, now_ts=now_ts)
+            self._render_service.push_frame(image)
+            return True
+        except Exception:
+            logger.exception("Command render step failed.")
+            return False
 
 
 class TickLoopService:
@@ -148,29 +191,60 @@ class TickLoopService:
         state_repository: StateRepositoryProtocol,
         settings_repository: SettingsRepositoryProtocol,
         plugin_runtime: PluginRuntime,
-        display_driver: DisplayDriverProtocol,
+        render_service: RenderService,
         lock: asyncio.Lock,
     ) -> None:
         self._state_repository = state_repository
         self._settings_repository = settings_repository
         self._plugin_runtime = plugin_runtime
-        self._display_driver = display_driver
+        self._render_service = render_service
         self._lock = lock
 
     async def run_tick(self) -> int:
         async with self._lock:
             default_pet_name = self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
             state = self._state_repository.load_or_create(default_pet_name)
+
+            now_ts = time.time()
             events = state.apply_tick()
             events.extend(await self._plugin_runtime.on_tick(state))
+
+            state.pet_state.sync_identity(name=state.pet.name, emotion=state.pet.emotion.value)
+            state.pet_state.ensure_idle_if_expired(now_ts)
+
+            rendered = self._render_if_needed(state=state, now_ts=now_ts)
+            if rendered:
+                events.append(
+                    DomainEvent(
+                        event_type="frame_rendered",
+                        payload={
+                            "animation": state.pet_state.current_animation,
+                            "source": "tick",
+                        },
+                    )
+                )
+
             state_version = self._state_repository.save_state(
                 state=state,
                 source="tick",
                 command_id=None,
                 events=events,
             )
-            await self._display_driver.render(state, state.active_theme_id)
             return state_version
+
+    def _render_if_needed(self, state: DeviceState, now_ts: float) -> bool:
+        self._render_service.set_theme(state.active_theme_id)
+        try:
+            decision = self._render_service.should_render(state.pet_state, now_ts=now_ts)
+            if not decision.should_render:
+                return False
+
+            image = self._render_service.render_frame(state.pet_state, now_ts=now_ts)
+            self._render_service.push_frame(image)
+            return True
+        except Exception:
+            logger.exception("Tick render step failed.")
+            return False
 
 
 class InitializeDeviceService:
@@ -191,6 +265,7 @@ class InitializeDeviceService:
     async def initialize(self, request: SetupRequest) -> int:
         state = self._state_repository.load_or_create(request.pet_name)
         state.pet.name = request.pet_name.strip() or state.pet.name
+        state.pet_state.name = state.pet.name
         state.hardware_profile = request.hardware_profile.strip() or "dummy"
 
         available_themes = {item["theme_id"] for item in self._theme_repository.list_themes()}

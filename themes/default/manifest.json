@@ -1,0 +1,30 @@
+{
+  "id": "default",
+  "name": "Default ePaper Theme",
+  "version": "0.1.0",
+  "description": "Default fullframe sprite theme for 2.7 inch Waveshare display.",
+  "preview": "Monochrome idle and scratch animation set.",
+  "stylesheet": "assets/style.css",
+  "placement_mode": "fullframe",
+  "canvas_width": 264,
+  "canvas_height": 176,
+  "default_animation": "idle",
+  "animations": {
+    "idle": {
+      "fps": 0.33,
+      "frames": [
+        "../classic/assets/idle_0.png",
+        "../classic/assets/idle_1.png",
+        "../classic/assets/idle_2.png"
+      ]
+    },
+    "scratch": {
+      "fps": 2.0,
+      "duration_ms": 1200,
+      "frames": [
+        "../classic/assets/scratch_0.png",
+        "../classic/assets/scratch_1.png"
+      ]
+    }
+  }
+}

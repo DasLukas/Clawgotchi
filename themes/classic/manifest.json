@@ -4,5 +4,27 @@
   "version": "0.1.0",
   "description": "Warm ePaper inspired visual baseline.",
   "preview": "A warm sepia style designed for ePaper readability.",
-  "stylesheet": "assets/style.css"
+  "stylesheet": "assets/style.css",
+  "placement_mode": "fullframe",
+  "canvas_width": 264,
+  "canvas_height": 176,
+  "default_animation": "idle",
+  "animations": {
+    "idle": {
+      "fps": 0.33,
+      "frames": [
+        "assets/idle_0.png",
+        "assets/idle_1.png",
+        "assets/idle_2.png"
+      ]
+    },
+    "scratch": {
+      "fps": 2.0,
+      "duration_ms": 1200,
+      "frames": [
+        "assets/scratch_0.png",
+        "assets/scratch_1.png"
+      ]
+    }
+  }
 }
