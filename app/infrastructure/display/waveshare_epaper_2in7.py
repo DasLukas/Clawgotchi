@@ -93,15 +93,22 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
     def _load_epd_module(self) -> Any:
         candidates = ("waveshare_epd.epd2in7_V2", "waveshare_epd.epd2in7")
         last_error: Exception | None = None
+        gpio_busy_detected = False
 
         for module_name in candidates:
             try:
                 return importlib.import_module(module_name)
             except Exception as exc:
                 last_error = exc
+                if "GPIO busy" in str(exc):
+                    gpio_busy_detected = True
                 logger.debug("Failed to import Waveshare module", extra={"module": module_name, "error": str(exc)})
 
         if last_error is not None:
+            if gpio_busy_detected:
+                raise ImportError(
+                    "Unable to import Waveshare 2.7 inch EPD module because GPIO lines are busy."
+                ) from last_error
             raise ImportError("Unable to import Waveshare 2.7 inch EPD module.") from last_error
         raise ImportError("Unable to import Waveshare 2.7 inch EPD module.")
 

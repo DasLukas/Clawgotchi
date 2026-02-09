@@ -195,7 +195,6 @@ class ApplicationContainer:
         plugin_driver = self.plugin_runtime.create_display_driver(normalized, self.display_settings)
         if plugin_driver is not None:
             try:
-                plugin_driver.init()
                 self._switch_display_driver(plugin_driver)
                 return
             except Exception:
