@@ -1,217 +1,322 @@
 # Clawgotchi
 
-Extensible app skeleton for a Raspberry Pi based Clawgotchi (Tamagotchi-like pet rendered on ePaper).
+Clawgotchi ist ein erweiterbares Raspberry-Pi-Projekt mit FastAPI-Weboberflaeche, REST-API, Theme-/Plugin-System und SQLite-Persistenz.
 
 ## Features
 
-- Layered architecture: `domain`, `application`, `infrastructure`, `presentation`
-- OOP-first design with explicit service/use-case classes
-- FastAPI REST API + Jinja2 server-rendered web interface
-- Setup wizard and dashboard
-- Filesystem plugin system with web-managed enable/disable and rescan
-- Filesystem theme system with web-managed activation and rescan
-- SQLite persistence with versioned state snapshots and import/export
-- Async command queue worker and async tick loop worker
-- Dummy hardware drivers for display/input/audio/sensors
+- Schichtenarchitektur: `domain`, `application`, `infrastructure`, `presentation`
+- FastAPI REST API + Jinja2 Web-UI
+- Setup-Wizard, Dashboard, Themes und Plugins
+- SQLite-Statuspersistenz mit Snapshots
+- Hintergrund-Worker fuer Tick-Loop und Command-Queue
+- Dummy-Hardwaretreiber (Display/Input)
 
-## Tech stack
+## Voraussetzungen
 
-- Python 3.11+
-- FastAPI + Uvicorn
-- Jinja2 templates
-- SQLAlchemy + SQLite
-- pydantic-settings
+- Raspberry Pi OS Lite/Minimal (Debian-basiert)
+- Internetzugang fuer `apt` und `pip`
+- Git-Repository via SSH (`git@...`)
+- Root-Rechte (z. B. `sudo`)
 
-## Repository structure
+## Installation
 
-```
-.
-├── app/
-│   ├── application/
-│   ├── domain/
-│   ├── infrastructure/
-│   └── presentation/
-├── config/
-├── plugins/
-├── themes/
-├── tests/
-├── main.py
-└── README.md
-```
+### A) Automatische Installation (empfohlen)
 
-## Git Branch Workflow
-
-### `main`
-
-- Publish/release branch
-- Stable, tested, runnable releases only
-- No direct feature development
-- Every merge to `main` is a release and must be tagged
-
-### `develop`
-
-- Active development branch
-- New features, refactors, plugins, themes
-- May be unstable
-
-### Optional support branches
-
-- `feature/<name>` -> merge into `develop`
-- `hotfix/<name>` -> merge directly into `main`, then back-merge into `develop`
-
-### Suggested release process
-
-1. Build and test on `develop`.
-2. Merge `develop` into `main` when stable.
-3. Tag release on `main` (for example `v0.2.0`).
-4. Continue feature work on `develop`.
-
-## Setup
-
-1. Create and activate a virtual environment:
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
-    ```
-2. Install dependencies:
-    ```bash
-    pip install -e ".[dev]"
-    ```
-3. Copy `.env.example` to `.env` and adjust if needed.
-
-## Run
+Einzeiler:
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000
+curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo bash
 ```
 
-Open:
-
-- Web setup/dashboard: `http://localhost:8000/`
-- API docs: `http://localhost:8000/docs`
-
-## REST API usage
-
-### Send command
+Nicht-interaktiv (keine Rueckfragen, alle Pflichtwerte gesetzt):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/commands \
-  -H "Content-Type: application/json" \
-  -d '{"type":"scratch","intensity":0.7,"source":"api"}'
+curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo env \
+  CLWG_USER=clawgotchi \
+  CLWG_GIT_SSH_URL=git@github.com:ORG/REPO.git \
+  CLWG_GIT_HOST=github.com \
+  CLWG_UPDATE_TIME=03:30 \
+  bash
 ```
 
-Response:
-
-```json
-{
-    "accepted": true,
-    "command_id": "...",
-    "state_version": 12
-}
-```
-
-Supported core command types:
-
-- `feed`
-- `play`
-- `sleep`
-- `wake`
-- `scratch`
-- `status`
-
-### Export state snapshot
+Dry-Run (zeigt nur Aktionen, fuehrt nichts aus):
 
 ```bash
-curl http://localhost:8000/api/v1/state/export
+curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo env \
+  CLWG_USER=clawgotchi \
+  CLWG_GIT_SSH_URL=git@github.com:ORG/REPO.git \
+  CLWG_GIT_HOST=github.com \
+  CLWG_UPDATE_TIME=03:30 \
+  CLWG_DRYRUN=1 \
+  bash
 ```
 
-### Import state snapshot
+Was der Installer macht:
+
+- Legt Benutzer an (falls nicht vorhanden) oder verwendet bestehenden Benutzer.
+- Installiert Systempakete, Python-Umgebung und `pip install -e .` in `/opt/clawgotchi/.venv`.
+- Aktiviert SPI (non-interaktiv, falls moeglich) und setzt `dtparam=spi=on`.
+- Konfiguriert `unattended-upgrades`.
+- Erstellt `clawgotchi.service`.
+- Erstellt naechtlichen Update-Job (`clawgotchi-update.service` + `clawgotchi-update.timer`) fuer `main`.
+- Fuehrt Git-Operationen fuer Updates explizit als Zielbenutzer aus (nicht als root).
+
+### B) Manuelle Installation
+
+1. Systempakete installieren:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/state/import \
-  -H "Content-Type: application/json" \
-  -d '{"dry_run":true,"snapshot":{...}}'
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  ca-certificates curl git openssh-client \
+  python3 python3-pip python3-venv \
+  unattended-upgrades apt-listchanges
 ```
 
-## Web setup wizard flow
-
-1. Open `/setup`.
-2. Enter pet name.
-3. Select theme.
-4. Enable or disable plugins.
-5. Select hardware profile placeholder.
-6. Submit and redirect to `/dashboard`.
-
-## Plugin system
-
-- Plugin folder pattern: `./plugins/<plugin_id>`
-- Required files:
-    - `manifest.json`
-    - entrypoint file (default `plugin.py`)
-
-`manifest.json` fields:
-
-- `id`
-- `name`
-- `version`
-- `description`
-- `entrypoint`
-- `class_name`
-- `capabilities`
-
-Plugin class must inherit `PluginBase` and can extend:
-
-- commands
-- emotions
-- mini-games
-- hardware drivers
-- UI extensions
-
-Manage plugins in web UI:
-
-- `GET /plugins`
-- `POST /plugins/rescan`
-- `POST /plugins/{plugin_id}/enable`
-- `POST /plugins/{plugin_id}/disable`
-
-## Theme system
-
-- Theme folder pattern: `./themes/<theme_id>`
-- Required files:
-    - `manifest.json`
-    - assets folder (for example `assets/style.css`)
-
-`manifest.json` fields:
-
-- `id`
-- `name`
-- `version`
-- `description`
-- `preview`
-- `stylesheet`
-
-Manage themes in web UI:
-
-- `GET /themes`
-- `POST /themes/rescan`
-- `POST /themes/{theme_id}/activate`
-
-## State persistence and transfer
-
-- State is persisted after every command and every tick.
-- Every persisted state write creates a snapshot entry.
-- State is versioned with `state_version` and `schema_version`.
-- Export/import payload is platform independent JSON.
-- Snapshot stores `active_theme_id` and `enabled_plugin_ids` by IDs.
-
-## Testing
+2. Benutzer anlegen (nur falls nicht vorhanden):
 
 ```bash
-pytest
+id -u clawgotchi >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash clawgotchi
 ```
 
-## Scope boundaries
+3. SPI aktivieren:
 
-- No real ePaper hardware integration yet (dummy driver only)
-- No advanced auth or user management
-- Designed to be extended incrementally without hidden magic
+```bash
+sudo raspi-config nonint do_spi 0
+```
+
+Zusatzlich sicherstellen, dass in `/boot/config.txt` (oder je nach System `/boot/firmware/config.txt`) Folgendes vorhanden ist:
+
+```bash
+dtparam=spi=on
+```
+
+4. SSH-Hinweis (optional, nicht automatisch aktivieren):
+
+```bash
+sudo systemctl enable --now ssh
+```
+
+5. Deploy-Key fuer Git-SSH vorbereiten (als Zielbenutzer):
+
+```bash
+sudo -u clawgotchi mkdir -p /home/clawgotchi/.ssh
+sudo -u clawgotchi chmod 700 /home/clawgotchi/.ssh
+sudo -u clawgotchi test -f /home/clawgotchi/.ssh/id_ed25519 || \
+  sudo -u clawgotchi ssh-keygen -t ed25519 -N "" -f /home/clawgotchi/.ssh/id_ed25519 -C "clawgotchi-deploy@$(hostname -s)"
+sudo -u clawgotchi cat /home/clawgotchi/.ssh/id_ed25519.pub
+```
+
+Public Key als Deploy Key (read-only empfohlen) im Git-Host hinterlegen. Danach Host-Key hinterlegen und Test:
+
+```bash
+sudo -u clawgotchi touch /home/clawgotchi/.ssh/known_hosts
+sudo -u clawgotchi chmod 600 /home/clawgotchi/.ssh/known_hosts
+sudo ssh-keyscan -H github.com | sudo tee -a /home/clawgotchi/.ssh/known_hosts >/dev/null
+sudo chown clawgotchi:clawgotchi /home/clawgotchi/.ssh/known_hosts
+sudo -u clawgotchi ssh -T git@github.com
+```
+
+6. Projekt nach `/opt/clawgotchi` klonen:
+
+```bash
+sudo mkdir -p /opt/clawgotchi
+sudo chown -R clawgotchi:clawgotchi /opt/clawgotchi
+sudo -u clawgotchi git clone git@github.com:ORG/REPO.git /opt/clawgotchi
+sudo -u clawgotchi bash -lc "cd /opt/clawgotchi && git checkout main"
+```
+
+Falls bereits vorhanden:
+
+```bash
+sudo -u clawgotchi bash -lc "cd /opt/clawgotchi && git fetch origin && git checkout main && git pull --ff-only origin main"
+```
+
+7. Virtual Environment und Python-Abhaengigkeiten installieren:
+
+```bash
+sudo -u clawgotchi python3 -m venv /opt/clawgotchi/.venv
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/pip install --upgrade pip setuptools wheel
+sudo -u clawgotchi bash -lc "cd /opt/clawgotchi && /opt/clawgotchi/.venv/bin/pip install -e ."
+```
+
+8. `clawgotchi.service` erstellen:
+
+```bash
+sudo tee /etc/systemd/system/clawgotchi.service >/dev/null <<'EOF'
+[Unit]
+Description=Clawgotchi Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clawgotchi
+Group=clawgotchi
+WorkingDirectory=/opt/clawgotchi
+ExecStart=/opt/clawgotchi/.venv/bin/python /opt/clawgotchi/main.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+9. Unattended Upgrades aktivieren:
+
+```bash
+sudo dpkg-reconfigure -f noninteractive unattended-upgrades
+sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+sudo systemctl enable --now unattended-upgrades
+```
+
+10. Update-Skript erstellen (`/usr/local/bin/clawgotchi-update.sh`):
+
+```bash
+sudo tee /usr/local/bin/clawgotchi-update.sh >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+APP_USER="clawgotchi"
+PROJECT_ROOT="/opt/clawgotchi"
+VENV_PIP="/opt/clawgotchi/.venv/bin/pip"
+GIT_URL="git@github.com:ORG/REPO.git"
+
+su - "${APP_USER}" -c "cd '${PROJECT_ROOT}' && git remote set-url origin '${GIT_URL}' && git fetch origin && git checkout main && git pull --ff-only origin main"
+su - "${APP_USER}" -c "cd '${PROJECT_ROOT}' && '${VENV_PIP}' install -e ."
+systemctl restart clawgotchi.service
+EOF
+sudo chmod 755 /usr/local/bin/clawgotchi-update.sh
+sudo chown root:root /usr/local/bin/clawgotchi-update.sh
+```
+
+11. Update-Service + Timer erstellen:
+
+```bash
+sudo tee /etc/systemd/system/clawgotchi-update.service >/dev/null <<'EOF'
+[Unit]
+Description=Clawgotchi Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/clawgotchi-update.sh
+EOF
+```
+
+```bash
+sudo tee /etc/systemd/system/clawgotchi-update.timer >/dev/null <<'EOF'
+[Unit]
+Description=Clawgotchi Nightly Update Timer
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Timezone=Europe/Berlin
+Unit=clawgotchi-update.service
+
+[Install]
+WantedBy=timers.target
+EOF
+```
+
+12. Dienste aktivieren und pruefen:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now clawgotchi.service
+sudo systemctl enable --now clawgotchi-update.timer
+sudo systemctl status clawgotchi.service
+sudo systemctl status clawgotchi-update.timer
+```
+
+## Updating
+
+Automatisches Update:
+
+- Der Timer `clawgotchi-update.timer` startet taeglich um `03:30` (Zeitzone `Europe/Berlin`) den Update-Service.
+- Update-Ablauf: `git fetch` -> `git checkout main` -> `git pull --ff-only` -> `pip install -e .` -> `systemctl restart clawgotchi.service`.
+
+Manuell sofort ausfuehren:
+
+```bash
+sudo systemctl start clawgotchi-update.service
+```
+
+## Configuration
+
+### Installer-Variablen (`install.sh`)
+
+- `CLWG_USER`: Linux-Benutzer fuer Betrieb und Git-Updates.
+- `CLWG_GIT_SSH_URL`: SSH-Repository-URL (Pflichtwert).
+- `CLWG_GIT_HOST`: Git-Host fuer `ssh-keyscan` und SSH-Test (optional, wird wenn moeglich aus URL abgeleitet).
+- `CLWG_UPDATE_TIME`: Uhrzeit fuer den Timer im Format `HH:MM` (Default `03:30`).
+- `CLWG_DRYRUN=1`: Nur anzeigen, nichts ausfuehren.
+- `CLWG_SKIP_SSH_TEST=1`: SSH-Test nach Deploy-Key-Einrichtung ueberspringen (nur wenn bewusst gewuenscht).
+
+### Laufzeit-Konfiguration der App
+
+- `.env` mit Prefix `CLAW_` (siehe `.env.example`)
+- `config/defaults.toml` als Standardkonfiguration
+- Typische Werte: `CLAW_HOST`, `CLAW_PORT`, `CLAW_DATABASE_URL`, `CLAW_PLUGIN_DIRECTORY`, `CLAW_THEME_DIRECTORY`
+
+## Betrieb und Verifikation
+
+Service- und Timer-Status:
+
+```bash
+sudo systemctl status clawgotchi.service
+sudo systemctl status clawgotchi-update.timer
+```
+
+Logs:
+
+```bash
+journalctl -u clawgotchi -f
+journalctl -u clawgotchi-update.service -n 50
+```
+
+REST-Weboberflaeche:
+
+- `http://<RASPBERRY_PI_IP>:8000/`
+- API-Dokumentation: `http://<RASPBERRY_PI_IP>:8000/docs`
+
+## Troubleshooting
+
+### `Permission denied (publickey)`
+
+- Deploy Key ist nicht im Repository hinterlegt oder falsches Repository.
+- Pruefen, ob der richtige Public Key in den Deploy Keys liegt (read-only reicht).
+- SSH-Test:
+
+```bash
+sudo -u clawgotchi ssh -T git@github.com
+```
+
+### `Host key verification failed`
+
+- Host-Key fehlt oder ist veraltet.
+- Erneut per `ssh-keyscan` eintragen:
+
+```bash
+sudo ssh-keyscan -H github.com | sudo tee -a /home/clawgotchi/.ssh/known_hosts >/dev/null
+sudo chown clawgotchi:clawgotchi /home/clawgotchi/.ssh/known_hosts
+sudo chmod 600 /home/clawgotchi/.ssh/known_hosts
+```
+
+### Service startet nicht
+
+- Letzte Fehlerdetails lesen:
+
+```bash
+journalctl -u clawgotchi -n 100 --no-pager
+sudo systemctl status clawgotchi.service
+```
+
+- Hauefige Ursachen: fehlgeschlagenes `pip install -e .`, falsche Dateirechte unter `/opt/clawgotchi`, Python-Umgebung beschaedigt.
