@@ -266,6 +266,11 @@ Manuell sofort ausfuehren:
 sudo systemctl start clawgotchi-update.service
 ```
 
+Update ueber Webinterface:
+
+- Unter `Settings` kann ein Update direkt gestartet werden.
+- Die Seite zeigt den Rueckgabestatus sowie `stdout`/`stderr` des Skripts an.
+
 ## Configuration
 
 ### Installer-Variablen (`install.sh`)

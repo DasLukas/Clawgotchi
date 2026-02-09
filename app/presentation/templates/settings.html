@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card stack">
+  <h2>Settings</h2>
+  <p>Hier kann ein Projekt-Update direkt ueber das Webinterface gestartet werden.</p>
+  <p><strong>Update-Skript:</strong> <code>{{ update_script_path }}</code></p>
+
+  <form method="post" action="/settings/update">
+    <button type="submit">Jetzt updaten</button>
+  </form>
+</section>
+
+{% if update_result %}
+<section class="card stack">
+  <h2>Update Ergebnis</h2>
+  <p class="status {{ 'status-success' if update_result.ok else 'status-error' }}">{{ update_result.summary }}</p>
+
+  {% if update_result.stdout %}
+  <h3>Stdout</h3>
+  <pre class="log-output">{{ update_result.stdout }}</pre>
+  {% endif %}
+
+  {% if update_result.stderr %}
+  <h3>Stderr</h3>
+  <pre class="log-output">{{ update_result.stderr }}</pre>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

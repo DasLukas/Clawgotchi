@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -11,6 +14,8 @@ from app.domain.value_objects import PetCommand
 from app.presentation.dependencies import get_container
 
 TEMPLATE_DIRECTORY = Path(__file__).resolve().parent / "templates"
+PROJECT_ROOT = TEMPLATE_DIRECTORY.parent.parent.parent
+UPDATE_SCRIPT_PATH = Path(os.getenv("CLWG_UPDATE_SCRIPT", str(PROJECT_ROOT / "update.sh")))
 templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
 
 router = APIRouter(tags=["web"])
@@ -170,6 +175,74 @@ async def themes_rescan(container=Depends(get_container)) -> RedirectResponse:
 async def themes_activate(theme_id: str, container=Depends(get_container)) -> RedirectResponse:
     container.theme_service.activate_theme(theme_id)
     return RedirectResponse(url="/themes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/settings")
+async def settings_page(request: Request, container=Depends(get_container)):
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            "app_name": container.config.app_name,
+            "update_script_path": str(UPDATE_SCRIPT_PATH),
+            "update_result": None,
+        },
+    )
+
+
+@router.post("/settings/update")
+async def settings_update(request: Request, container=Depends(get_container)):
+    if not UPDATE_SCRIPT_PATH.exists():
+        result = {
+            "ok": False,
+            "summary": f"Update script wurde nicht gefunden: {UPDATE_SCRIPT_PATH}",
+            "stdout": "",
+            "stderr": "",
+        }
+    elif not os.access(UPDATE_SCRIPT_PATH, os.X_OK):
+        result = {
+            "ok": False,
+            "summary": f"Update script ist nicht ausfuehrbar: {UPDATE_SCRIPT_PATH}",
+            "stdout": "",
+            "stderr": "",
+        }
+    else:
+        try:
+            completed = await asyncio.to_thread(
+                subprocess.run,
+                [str(UPDATE_SCRIPT_PATH)],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            result = {
+                "ok": completed.returncode == 0,
+                "summary": (
+                    "Update erfolgreich abgeschlossen."
+                    if completed.returncode == 0
+                    else f"Update fehlgeschlagen (exit={completed.returncode})."
+                ),
+                "stdout": completed.stdout.strip(),
+                "stderr": completed.stderr.strip(),
+            }
+        except subprocess.TimeoutExpired:
+            result = {
+                "ok": False,
+                "summary": "Update wurde nach 600 Sekunden abgebrochen (Timeout).",
+                "stdout": "",
+                "stderr": "",
+            }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            "app_name": container.config.app_name,
+            "update_script_path": str(UPDATE_SCRIPT_PATH),
+            "update_result": result,
+        },
+    )
 
 
 @router.get("/debug/frame")

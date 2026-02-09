@@ -84,6 +84,37 @@ body {
   gap: 0.5rem;
 }
 
+.status {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.status-success {
+  background: #eef8eb;
+  border-color: #b8d7ad;
+  color: #254f1f;
+}
+
+.status-error {
+  background: #fdeeed;
+  border-color: #efc0bc;
+  color: #6f221b;
+}
+
+.log-output {
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fbf7ef;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
 button {
   background: var(--accent);
   color: #fff;
