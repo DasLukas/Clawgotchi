@@ -4,7 +4,8 @@ set -Eeuo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE="${CLWG_REMOTE:-origin}"
 BRANCH="${CLWG_BRANCH:-main}"
-VENV_PIP="${PROJECT_ROOT}/.venv/bin/pip"
+VENV_DIR="${PROJECT_ROOT}/.venv"
+VENV_PYTHON="${VENV_DIR}/bin/python"
 SERVICE_NAME="${CLWG_SERVICE_NAME:-clawgotchi.service}"
 APP_USER="${CLWG_USER:-clawgotchi}"
 
@@ -30,6 +31,19 @@ run_as_app() {
   fi
 }
 
+ensure_venv() {
+  if [[ ! -x "${VENV_PYTHON}" ]]; then
+    log "Virtualenv missing. Creating ${VENV_DIR}."
+    run_as_app "python3 -m venv '${VENV_DIR}'"
+  fi
+
+  if ! run_as_app "'${VENV_PYTHON}' -m pip --version" >/dev/null 2>&1; then
+    log "Virtualenv tooling is broken. Recreating ${VENV_DIR}."
+    run_as_app "rm -rf '${VENV_DIR}'"
+    run_as_app "python3 -m venv '${VENV_DIR}'"
+  fi
+}
+
 if [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
   die "Kein Git-Repository in ${PROJECT_ROOT} gefunden."
 fi
@@ -49,12 +63,10 @@ run_git fetch "${REMOTE}"
 run_git checkout "${BRANCH}"
 run_git pull --ff-only "${REMOTE}" "${BRANCH}"
 
-if [[ -x "${VENV_PIP}" ]]; then
-  log "Installiere/aktualisiere Python-Abhaengigkeiten."
-  run_as_app "'${VENV_PIP}' install -e '${PROJECT_ROOT}'"
-else
-  die "pip im Virtualenv nicht gefunden: ${VENV_PIP}"
-fi
+ensure_venv
+log "Installing/updating Python dependencies."
+run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"
+run_as_app "'${VENV_PYTHON}' -m pip install -e '${PROJECT_ROOT}'"
 
 if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q "^${SERVICE_NAME}"; then
   if [[ "${EUID}" -eq 0 ]]; then

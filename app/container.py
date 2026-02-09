@@ -183,7 +183,6 @@ class ApplicationContainer:
                 pass
 
         await self.plugin_runtime.shutdown()
-        self.display_driver.sleep()
 
     def refresh_display_driver(self, profile_id: str) -> None:
         normalized = profile_id.strip() or "dummy"
