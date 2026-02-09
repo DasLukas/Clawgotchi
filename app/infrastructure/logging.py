@@ -6,6 +6,30 @@ from datetime import datetime, timezone
 
 
 class JsonFormatter(logging.Formatter):
+    _standard_keys = {
+        "name",
+        "msg",
+        "args",
+        "levelname",
+        "levelno",
+        "pathname",
+        "filename",
+        "module",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "processName",
+        "process",
+        "message",
+    }
+
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -13,16 +37,17 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        if hasattr(record, "pet"):
-            payload["pet"] = getattr(record, "pet")
-        if hasattr(record, "emotion"):
-            payload["emotion"] = getattr(record, "emotion")
-        if hasattr(record, "theme"):
-            payload["theme"] = getattr(record, "theme")
-        if hasattr(record, "state_version"):
-            payload["state_version"] = getattr(record, "state_version")
-        if hasattr(record, "cue"):
-            payload["cue"] = getattr(record, "cue")
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            payload["stack"] = record.stack_info
+
+        for key, value in record.__dict__.items():
+            if key in self._standard_keys:
+                continue
+            payload[key] = value
+
         return json.dumps(payload)
 
 
