@@ -243,6 +243,22 @@ Automatisches Update:
 - Der Timer `clawgotchi-update.timer` startet taeglich um `03:30` (Zeitzone `Europe/Berlin`) den Update-Service.
 - Update-Ablauf: `git fetch` -> `git checkout main` -> `git pull --ff-only` -> `pip install -e .` -> `systemctl restart clawgotchi.service`.
 
+Manuelles Update aus dem Projektverzeichnis:
+
+```bash
+./update.sh
+```
+
+Hinweis:
+
+- Das Skript bricht bei lokalen Git-Aenderungen bewusst ab (kein automatisches Merge).
+- Wenn `update.sh` ohne root ausgefuehrt wird, wird der Service nicht neu gestartet.
+- Fuer Update inklusive Service-Neustart:
+
+```bash
+sudo ./update.sh
+```
+
 Manuell sofort ausfuehren:
 
 ```bash
