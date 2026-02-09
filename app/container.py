@@ -224,10 +224,5 @@ class ApplicationContainer:
         if driver is self.display_driver:
             return
 
-        try:
-            self.display_driver.sleep()
-        except Exception:
-            pass
-
         self.display_driver = driver
         self.render_service.set_display_driver(driver)
