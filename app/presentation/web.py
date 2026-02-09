@@ -29,6 +29,7 @@ async def setup_page(request: Request, container=Depends(get_container)):
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
     themes = container.theme_service.list_themes()
     plugins = container.plugin_service.list_plugins()
+    hardware_profiles = container.plugin_service.list_hardware_profiles()
     return templates.TemplateResponse(
         request=request,
         name="setup.html",
@@ -36,7 +37,7 @@ async def setup_page(request: Request, container=Depends(get_container)):
             "app_name": container.config.app_name,
             "themes": themes,
             "plugins": plugins,
-            "hardware_profiles": ["dummy", "raspberrypi-v1"],
+            "hardware_profiles": hardware_profiles,
         },
     )
 
@@ -57,6 +58,7 @@ async def setup_submit(
             hardware_profile=hardware_profile,
         )
     )
+    container.refresh_display_driver(profile_id=hardware_profile)
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -97,12 +99,16 @@ async def dashboard_command(
 @router.get("/plugins")
 async def plugins_page(request: Request, container=Depends(get_container)):
     plugins = container.plugin_service.list_plugins()
+    hardware_profiles = container.plugin_service.list_hardware_profiles()
+    current_profile = container.status_service.get_status()["state"].get("hardware_profile", "dummy")
     return templates.TemplateResponse(
         request=request,
         name="plugins.html",
         context={
             "app_name": container.config.app_name,
             "plugins": plugins,
+            "hardware_profiles": hardware_profiles,
+            "current_profile": current_profile,
         },
     )
 
@@ -110,18 +116,34 @@ async def plugins_page(request: Request, container=Depends(get_container)):
 @router.post("/plugins/rescan")
 async def plugins_rescan(container=Depends(get_container)) -> RedirectResponse:
     await container.plugin_service.rescan()
+    current_state = container.status_service.get_status()["state"]
+    container.refresh_display_driver(profile_id=current_state.get("hardware_profile", "dummy"))
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/plugins/{plugin_id}/enable")
 async def plugins_enable(plugin_id: str, container=Depends(get_container)) -> RedirectResponse:
     await container.plugin_service.enable(plugin_id)
+    current_state = container.status_service.get_status()["state"]
+    container.refresh_display_driver(profile_id=current_state.get("hardware_profile", "dummy"))
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/plugins/{plugin_id}/disable")
 async def plugins_disable(plugin_id: str, container=Depends(get_container)) -> RedirectResponse:
     await container.plugin_service.disable(plugin_id)
+    current_state = container.status_service.get_status()["state"]
+    container.refresh_display_driver(profile_id=current_state.get("hardware_profile", "dummy"))
+    return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/plugins/hardware-profile")
+async def plugins_set_hardware_profile(
+    container=Depends(get_container),
+    hardware_profile: str = Form(...),
+) -> RedirectResponse:
+    container.plugin_service.set_hardware_profile(hardware_profile)
+    container.refresh_display_driver(profile_id=hardware_profile)
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
 
 

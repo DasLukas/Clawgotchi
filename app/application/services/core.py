@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from app.application.ports.display import DisplayDriver
 from app.application.command_processing import CommandQueueProtocol
 from app.application.interfaces import (
     PluginContext,
@@ -99,6 +100,21 @@ class PluginRuntime:
     async def shutdown(self) -> None:
         for plugin_id in list(self._instances_by_id.keys()):
             await self.deactivate(plugin_id)
+
+    def create_display_driver(self, profile_id: str, settings: Any) -> DisplayDriver | None:
+        for plugin in self._instances_by_id.values():
+            try:
+                driver = plugin.create_display_driver(profile_id=profile_id, settings=settings)
+            except Exception:
+                logger.exception(
+                    "Plugin display driver creation failed.",
+                    extra={"plugin_id": getattr(plugin, "plugin_id", "unknown"), "profile_id": profile_id},
+                )
+                continue
+
+            if driver is not None:
+                return driver
+        return None
 
 
 class SendCommandService:
@@ -368,6 +384,43 @@ class PluginService:
 
     def list_plugins(self) -> list[dict[str, Any]]:
         return self._plugin_repository.list_plugins()
+
+    def list_hardware_profiles(self) -> list[dict[str, str]]:
+        profiles: list[dict[str, str]] = [
+            {
+                "id": "dummy",
+                "name": "Dummy (No Hardware)",
+            }
+        ]
+        seen_ids = {"dummy"}
+
+        for plugin in self._plugin_repository.list_plugins():
+            manifest = plugin.get("manifest", {})
+            hardware_profiles = manifest.get("metadata", {}).get("hardware_profiles", [])
+            for item in hardware_profiles:
+                if not isinstance(item, dict):
+                    continue
+
+                profile_id = str(item.get("id", "")).strip()
+                if not profile_id or profile_id in seen_ids:
+                    continue
+
+                profile_name = str(item.get("name", profile_id)).strip() or profile_id
+                profiles.append({"id": profile_id, "name": profile_name})
+                seen_ids.add(profile_id)
+
+        return profiles
+
+    def set_hardware_profile(self, profile_id: str) -> int:
+        normalized = profile_id.strip() or "dummy"
+        state = self._state_repository.load_or_create(self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
+        state.hardware_profile = normalized
+        return self._state_repository.save_state(
+            state=state,
+            source="hardware_profile_changed",
+            command_id=None,
+            events=[DomainEvent(event_type="hardware_profile_changed", payload={"hardware_profile": normalized})],
+        )
 
     def _find_plugin(self, plugin_id: str) -> dict[str, Any]:
         for plugin in self._plugin_repository.list_plugins():

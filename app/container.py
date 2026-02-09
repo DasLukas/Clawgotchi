@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
+from app.application.ports.display import DisplayDriver
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
     CommandHandlerService,
@@ -17,6 +19,7 @@ from app.application.services import (
 )
 from app.config import ConfigResolver, RuntimeConfig
 from app.infrastructure.database import Database
+from app.infrastructure.display.dummy import DummyDisplayDriver
 from app.infrastructure.display.factory import create_display_driver
 from app.infrastructure.hardware import DummyAudioDriver, DummyInputDriver, DummySensorDriver
 from app.infrastructure.logging import configure_logging
@@ -30,6 +33,8 @@ from app.infrastructure.repositories import (
 from app.infrastructure.theme_loader import FileSystemThemeLoader
 from app.infrastructure.themes.theme_loader import ThemeLoader
 from config.settings import DisplaySettings
+
+logger = logging.getLogger(__name__)
 
 
 class ApplicationContainer:
@@ -65,7 +70,7 @@ class ApplicationContainer:
         self.theme_loader = FileSystemThemeLoader(self.config.theme_directory)
         self.theme_asset_loader = ThemeLoader(self.config.theme_directory)
 
-        self.display_driver = create_display_driver(self.display_settings)
+        self.display_driver: DisplayDriver = self._create_base_display_driver()
         self.render_service = RenderService(
             theme_loader=self.theme_asset_loader,
             display_driver=self.display_driver,
@@ -158,6 +163,7 @@ class ApplicationContainer:
         if themes and state.active_theme_id in available_theme_ids:
             self.theme_repository.activate(state.active_theme_id)
 
+        self.refresh_display_driver(profile_id=state.hardware_profile)
         self.render_service.set_theme(state.active_theme_id)
 
         self._tasks = [
@@ -178,3 +184,52 @@ class ApplicationContainer:
 
         await self.plugin_runtime.shutdown()
         self.display_driver.sleep()
+
+    def refresh_display_driver(self, profile_id: str) -> None:
+        normalized = profile_id.strip() or "dummy"
+
+        if normalized == "dummy":
+            self._switch_display_driver(self._create_dummy_driver())
+            return
+
+        plugin_driver = self.plugin_runtime.create_display_driver(normalized, self.display_settings)
+        if plugin_driver is not None:
+            try:
+                plugin_driver.init()
+                self._switch_display_driver(plugin_driver)
+                return
+            except Exception:
+                logger.exception("Plugin display driver failed to initialize.", extra={"profile_id": normalized})
+                self._switch_display_driver(self._create_dummy_driver())
+                return
+
+        logger.warning("Hardware profile not provided by any enabled plugin. Falling back to dummy driver.", extra={"profile_id": normalized})
+        self._switch_display_driver(self._create_dummy_driver())
+
+    def _create_base_display_driver(self) -> DisplayDriver:
+        try:
+            return create_display_driver(self.display_settings)
+        except Exception:
+            logger.exception("Base display driver initialization failed. Falling back to dummy.")
+            return self._create_dummy_driver()
+
+    def _create_dummy_driver(self) -> DisplayDriver:
+        dummy = DummyDisplayDriver(
+            rotation=self.display_settings.display_rotation,
+            write_debug_png=self.display_settings.display_debug_write_png,
+            debug_png_path=self.display_settings.display_debug_png_path,
+        )
+        dummy.init()
+        return dummy
+
+    def _switch_display_driver(self, driver: DisplayDriver) -> None:
+        if driver is self.display_driver:
+            return
+
+        try:
+            self.display_driver.sleep()
+        except Exception:
+            pass
+
+        self.display_driver = driver
+        self.render_service.set_display_driver(driver)

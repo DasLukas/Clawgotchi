@@ -24,6 +24,16 @@ class FileSystemPluginLoader:
 
             payload = json.loads(manifest_file.read_text(encoding="utf-8"))
             plugin_id = str(payload.get("id") or folder.name)
+            reserved_keys = {
+                "id",
+                "name",
+                "version",
+                "description",
+                "entrypoint",
+                "class_name",
+                "capabilities",
+            }
+            metadata = {key: value for key, value in payload.items() if key not in reserved_keys}
             manifests.append(
                 PluginManifest(
                     plugin_id=plugin_id,
@@ -33,6 +43,7 @@ class FileSystemPluginLoader:
                     entrypoint=str(payload.get("entrypoint") or "plugin.py"),
                     class_name=str(payload.get("class_name") or "Plugin"),
                     capabilities=list(payload.get("capabilities") or []),
+                    metadata=metadata,
                 )
             )
         return manifests

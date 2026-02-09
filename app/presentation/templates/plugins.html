@@ -42,4 +42,19 @@
     </tbody>
   </table>
 </section>
+
+<section class="card">
+  <h2>Hardware Profile</h2>
+  <form method="post" action="/plugins/hardware-profile" class="stack">
+    <label>
+      Active profile
+      <select name="hardware_profile">
+        {% for profile in hardware_profiles %}
+          <option value="{{ profile.id }}" {% if profile.id == current_profile %}selected{% endif %}>{{ profile.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Apply hardware profile</button>
+  </form>
+</section>
 {% endblock %}

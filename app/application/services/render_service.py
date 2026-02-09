@@ -43,6 +43,9 @@ class RenderService:
     def set_theme(self, theme_id: str) -> None:
         self._active_theme_id = theme_id
 
+    def set_display_driver(self, display_driver: DisplayDriver) -> None:
+        self._display_driver = display_driver
+
     def should_render(self, pet_state: PetState, now_ts: float) -> RenderDecision:
         manifest = self._safe_load_manifest(self._active_theme_id)
         animation_name, animation_config = self._resolve_animation(manifest, pet_state.current_animation)

@@ -32,7 +32,7 @@
       Hardware profile
       <select name="hardware_profile">
         {% for profile in hardware_profiles %}
-          <option value="{{ profile }}">{{ profile }}</option>
+          <option value="{{ profile.id }}">{{ profile.name }}</option>
         {% endfor %}
       </select>
     </label>

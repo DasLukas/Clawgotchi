@@ -18,6 +18,7 @@ class PluginManifest:
     entrypoint: str
     class_name: str
     capabilities: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -28,6 +29,7 @@ class PluginManifest:
             "entrypoint": self.entrypoint,
             "class_name": self.class_name,
             "capabilities": list(self.capabilities),
+            "metadata": dict(self.metadata),
         }
 
 
@@ -83,6 +85,9 @@ class PluginBase(ABC):
 
     def get_hardware_drivers(self) -> list[str]:
         return []
+
+    def create_display_driver(self, profile_id: str, settings: Any) -> Any | None:
+        return None
 
     def get_ui_extensions(self) -> list[str]:
         return []
@@ -160,9 +165,4 @@ class PluginLoaderProtocol(Protocol):
 
 class ThemeLoaderProtocol(Protocol):
     def scan(self) -> list[ThemeManifest]:
-        ...
-
-
-class DisplayDriverProtocol(Protocol):
-    async def render(self, state: DeviceState, theme_id: str) -> None:
         ...
