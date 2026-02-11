@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "ERROR: Please run with bash (example: sudo bash ./install.sh)." >&2
+  exit 1
+fi
+
 set -Eeuo pipefail
 
 # Clawgotchi installer for Raspberry Pi OS Lite/Minimal.
@@ -398,9 +404,9 @@ setup_ssh_for_git_user() {
     log "Public deploy key (add this as Deploy Key in your Git hosting platform):"
     log "GitHub: Repository -> Settings -> Deploy keys -> Add deploy key (read-only recommended)."
     log "GitLab: Project -> Settings -> Repository -> Deploy keys -> Add new key (read-only recommended)."
-    printf "\n----- BEGIN DEPLOY KEY -----\n"
+    printf -- "\n----- BEGIN DEPLOY KEY -----\n"
     cat "${public_key}"
-    printf "----- END DEPLOY KEY -----\n\n"
+    printf -- "----- END DEPLOY KEY -----\n\n"
   fi
 }
 

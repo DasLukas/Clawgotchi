@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This plugin targets the public Waveshare Python driver interface (`waveshare_epd` package).
+This plugin targets the public Waveshare Python driver interface from the `waveshare-epaper` package (`epaper` module).
 
 - Package: `waveshare-epaper`
 - Upstream: https://pypi.org/project/waveshare-epaper/

@@ -31,8 +31,11 @@
     <label>
       Hardware profile
       <select name="hardware_profile">
+        <option value="dummy">Dummy/Mock display</option>
         {% for profile in hardware_profiles %}
+          {% if profile.id != "dummy" %}
           <option value="{{ profile.id }}">{{ profile.name }}</option>
+          {% endif %}
         {% endfor %}
       </select>
     </label>

@@ -233,6 +233,22 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         return None
 
     def _load_epd_module_from_epaper(self, import_errors: list[str]) -> Any | None:
+        for model_name in ("epd2in7_V2", "epd2in7"):
+            try:
+                module = importlib.import_module(f"epaper.{model_name}")
+                self._epd_module_name = f"epaper.{model_name}"
+                logger.info(
+                    "Loaded Waveshare module from epaper package module path.",
+                    extra={"model_name": model_name},
+                )
+                return module
+            except Exception as exc:
+                import_errors.append(f"epaper.{model_name}: {exc}")
+                logger.debug(
+                    "Failed to load model from epaper package module path.",
+                    extra={"model_name": model_name, "error": str(exc)},
+                )
+
         try:
             epaper_package = importlib.import_module("epaper")
         except Exception as exc:
@@ -251,7 +267,7 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                         )
                         return module
             except Exception as exc:
-                import_errors.append(f"epaper({model_name}): {exc}")
+                import_errors.append(f"epaper.epaper({model_name}): {exc}")
                 logger.debug(
                     "Failed to load model from epaper package compatibility API.",
                     extra={"model_name": model_name, "error": str(exc)},
@@ -262,5 +278,5 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         python_executable = sys.executable or "python"
         return (
             "Install dependency with: "
-            f"{python_executable} -m pip install --upgrade waveshare-epd waveshare-epaper"
+            f"{python_executable} -m pip install --upgrade waveshare-epaper"
         )

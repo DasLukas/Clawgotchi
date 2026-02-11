@@ -49,8 +49,11 @@
     <label>
       Active profile
       <select name="hardware_profile">
+        <option value="dummy" {% if current_profile == "dummy" %}selected{% endif %}>Dummy/Mock display</option>
         {% for profile in hardware_profiles %}
+          {% if profile.id != "dummy" %}
           <option value="{{ profile.id }}" {% if profile.id == current_profile %}selected{% endif %}>{{ profile.name }}</option>
+          {% endif %}
         {% endfor %}
       </select>
     </label>

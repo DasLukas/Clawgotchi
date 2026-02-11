@@ -21,8 +21,11 @@
     <label>
       Display backend
       <select name="hardware_profile">
+        <option value="dummy" {% if current_hardware_profile == "dummy" %}selected{% endif %}>Dummy/Mock display</option>
         {% for profile in hardware_profiles %}
+          {% if profile.id != "dummy" %}
           <option value="{{ profile.id }}" {% if profile.id == current_hardware_profile %}selected{% endif %}>{{ profile.name }}</option>
+          {% endif %}
         {% endfor %}
       </select>
     </label>

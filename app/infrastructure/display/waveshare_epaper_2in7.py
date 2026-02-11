@@ -107,6 +107,35 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
                     gpio_busy_detected = True
                 logger.debug("Failed to import Waveshare module", extra={"module": module_name, "error": str(exc)})
 
+        for module_name in ("epaper.epd2in7_V2", "epaper.epd2in7"):
+            try:
+                return importlib.import_module(module_name)
+            except Exception as exc:
+                last_error = exc
+                if "GPIO busy" in str(exc):
+                    gpio_busy_detected = True
+                logger.debug("Failed to import Waveshare module", extra={"module": module_name, "error": str(exc)})
+
+        try:
+            epaper_package = importlib.import_module("epaper")
+            if hasattr(epaper_package, "epaper"):
+                for model_name in ("epd2in7_V2", "epd2in7"):
+                    try:
+                        module = epaper_package.epaper(model_name)
+                        if module is not None:
+                            return module
+                    except Exception as exc:
+                        last_error = exc
+                        if "GPIO busy" in str(exc):
+                            gpio_busy_detected = True
+                        logger.debug(
+                            "Failed to load Waveshare module via epaper compatibility API",
+                            extra={"model": model_name, "error": str(exc)},
+                        )
+        except Exception as exc:
+            last_error = exc
+            logger.debug("Failed to import epaper package", extra={"error": str(exc)})
+
         if last_error is not None:
             if gpio_busy_detected:
                 raise ImportError(
