@@ -1,30 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
-from fastapi.templating import Jinja2Templates
 
 from app.presentation.dependencies import get_container
 
-TEMPLATE_DIRECTORY = Path(__file__).resolve().parent / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
-
 router = APIRouter(tags=["display"])
-
-
-@router.get("/display")
-async def display_page(request: Request, container=Depends(get_container)):
-    return templates.TemplateResponse(
-        request=request,
-        name="display.html",
-        context={
-            "app_name": container.config.app_name,
-            "capabilities": container.get_display_capabilities(),
-            "frame_meta": container.get_display_frame_meta(),
-        },
-    )
 
 
 @router.get("/api/display/capabilities")

@@ -279,11 +279,12 @@ Stop the service first, or run the test with `--force`.
 
 ## Virtual Display Mirror
 
-The web UI now includes a **Display** page (`/display`) that mirrors the exact framebuffer used for hardware rendering.
+The web UI dashboard (`/dashboard`) includes a centered virtual tamagotchi display shell that mirrors the exact framebuffer used for hardware rendering.
 
 - Shared framebuffer: `264x176`, `1-bit`
 - Hardware sinks and web mirror both consume the same framebuffer source
 - WebSocket updates on `/ws/display` with polling fallback in the browser
+- No separate display page is required
 
 Display API endpoints:
 

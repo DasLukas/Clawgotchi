@@ -64,3 +64,56 @@ def test_display_frame_png_changes_after_framebuffer_mutation(tmp_path: Path) ->
         changed_png = client.get("/api/display/frame.png")
         assert changed_png.status_code == 200
         assert changed_png.content != initial_png.content
+
+
+def test_dashboard_contains_only_virtual_display_card(tmp_path: Path) -> None:
+    database_path = tmp_path / "dashboard-display.db"
+    app = create_app(
+        {
+            "database_url": f"sqlite:///{database_path}",
+            "tick_interval_seconds": 120.0,
+            "plugin_directory": "./plugins",
+            "theme_directory": "./themes",
+        }
+    )
+
+    with TestClient(app) as client:
+        setup_response = client.post(
+            "/setup",
+            data={
+                "pet_name": "Mochi",
+                "theme_id": "default",
+                "hardware_profile": "dummy",
+            },
+            follow_redirects=False,
+        )
+        assert setup_response.status_code == 303
+
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+
+        html = response.text
+        assert 'id="dashboard-display-frame"' in html
+        assert "dashboard-display-card" in html
+        assert "tamagotchi-shell" in html
+
+        assert "Pet state" not in html
+        assert "Needs" not in html
+        assert "Commands" not in html
+        assert "/api/display/frame.png" in html
+
+
+def test_separate_display_page_is_not_available(tmp_path: Path) -> None:
+    database_path = tmp_path / "dashboard-no-display-page.db"
+    app = create_app(
+        {
+            "database_url": f"sqlite:///{database_path}",
+            "tick_interval_seconds": 120.0,
+            "plugin_directory": "./plugins",
+            "theme_directory": "./themes",
+        }
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/display")
+        assert response.status_code == 404
