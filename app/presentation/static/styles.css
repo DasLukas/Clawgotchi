@@ -933,3 +933,19 @@ body.dashboard-display-body {
     border-width: 8px;
   }
 }
+
+.dashboard-mirror-card {
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 2vw, 1.4rem);
+}
+
+.dashboard-mirror-shell-wrap {
+  width: min(620px, 100%);
+  display: grid;
+  place-items: center;
+}
+
+.dashboard-mirror-card .tamagotchi-shell {
+  width: min(520px, 100%);
+}

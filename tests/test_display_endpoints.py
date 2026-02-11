@@ -66,7 +66,7 @@ def test_display_frame_png_changes_after_framebuffer_mutation(tmp_path: Path) ->
         assert changed_png.content != initial_png.content
 
 
-def test_dashboard_contains_only_virtual_display_card(tmp_path: Path) -> None:
+def test_dashboard_contains_virtual_display_mirror_and_runtime_sections(tmp_path: Path) -> None:
     database_path = tmp_path / "dashboard-display.db"
     app = create_app(
         {
@@ -94,12 +94,12 @@ def test_dashboard_contains_only_virtual_display_card(tmp_path: Path) -> None:
 
         html = response.text
         assert 'id="dashboard-display-frame"' in html
-        assert "dashboard-display-card" in html
+        assert "dashboard-mirror-card" in html
         assert "tamagotchi-shell" in html
 
-        assert "Pet state" not in html
-        assert "Needs" not in html
-        assert "Commands" not in html
+        assert "Pet State" in html
+        assert "Live Readout" in html
+        assert "Command Deck" in html
         assert "/api/display/frame.png" in html
 
 

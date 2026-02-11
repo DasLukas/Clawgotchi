@@ -1,38 +1,141 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-  </head>
-  <body class="dashboard-display-body">
-    <main class="dashboard-display-main" aria-label="Dashboard">
-      <article class="dashboard-display-card" aria-label="Virtual display card">
-        <div class="tamagotchi-shell" aria-hidden="true">
-          <div class="tamagotchi-screen-window">
-            <img
-              id="dashboard-display-frame"
-              src="/api/display/frame.png?v={{ frame_meta.version }}"
-              alt="Live mirrored pet display"
-              width="{{ capabilities.width }}"
-              height="{{ capabilities.height }}"
-              data-frame-url="/api/display/frame.png"
-              data-meta-url="/api/display/frame.meta"
-              data-ws-url="/ws/display"
-              data-version="{{ frame_meta.version }}"
-            />
-          </div>
+{% extends "base.html" %}
+{% from "components.html" import badge, code_block, section_header %}
 
-          <div class="tamagotchi-buttons" aria-hidden="true">
-            <span class="tamagotchi-button"></span>
-            <span class="tamagotchi-button"></span>
-            <span class="tamagotchi-button"></span>
-          </div>
+{% block extra_head %}
+{% if theme_stylesheet %}
+<link rel="stylesheet" href="/theme-assets/{{ status.state.active_theme_id }}/{{ theme_stylesheet }}" />
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% set active_hardware_profile = status.state.get("hardware_profile", "dummy") %}
+<section class="hero-panel">
+  <p class="kicker">Status Overview</p>
+  <h1 class="hero-title">{{ status.state.pet.name }} is currently {{ status.state.pet.emotion }}.</h1>
+  <p class="hero-subtitle">
+    Live runtime snapshot with command controls, plugin state, and needs telemetry for the active device.
+  </p>
+  <div class="hero-badges">
+    {{ badge("Theme: " ~ status.state.active_theme_id, "accent") }}
+    {{ badge("Hardware: " ~ active_hardware_profile) }}
+    {{ badge("State v" ~ status.state_version) }}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("Virtual Mirror", "The in-memory framebuffer mirrored in real time from the same render pipeline as hardware sinks.") }}
+  <article class="card dashboard-mirror-card" aria-label="Virtual display mirror">
+    <div class="dashboard-mirror-shell-wrap">
+      <div class="tamagotchi-shell">
+        <div class="tamagotchi-screen-window">
+          <img
+            id="dashboard-display-frame"
+            src="/api/display/frame.png?v={{ frame_meta.version }}"
+            alt="Live mirrored pet display"
+            width="{{ capabilities.width }}"
+            height="{{ capabilities.height }}"
+            data-frame-url="/api/display/frame.png"
+            data-meta-url="/api/display/frame.meta"
+            data-ws-url="/ws/display"
+            data-version="{{ frame_meta.version }}"
+          />
         </div>
-      </article>
-    </main>
 
-    <script src="/static/dashboard_display.js" defer></script>
-  </body>
-</html>
+        <div class="tamagotchi-buttons" aria-hidden="true">
+          <span class="tamagotchi-button"></span>
+          <span class="tamagotchi-button"></span>
+          <span class="tamagotchi-button"></span>
+        </div>
+      </div>
+    </div>
+  </article>
+</section>
+
+<section class="stack">
+  {{ section_header("Live Readout", "Core pet metrics rendered as high-contrast cards.") }}
+  <div class="readout-grid">
+    <article class="readout-card">
+      <p class="readout-label">Hunger</p>
+      <p class="readout-value">{{ status.state.pet.needs.hunger }}</p>
+    </article>
+    <article class="readout-card">
+      <p class="readout-label">Energy</p>
+      <p class="readout-value">{{ status.state.pet.needs.energy }}</p>
+    </article>
+    <article class="readout-card">
+      <p class="readout-label">Social</p>
+      <p class="readout-value">{{ status.state.pet.needs.social }}</p>
+    </article>
+    <article class="readout-card">
+      <p class="readout-label">Cleanliness</p>
+      <p class="readout-value">{{ status.state.pet.needs.cleanliness }}</p>
+    </article>
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("What It Does", "Identity, integration, and runtime state in one place.") }}
+  <div class="feature-grid two-up">
+    <article class="feature-card">
+      <h3>Pet State</h3>
+      <ul class="plain-list">
+        <li><strong>Name:</strong> {{ status.state.pet.name }}</li>
+        <li><strong>Emotion:</strong> {{ status.state.pet.emotion }}</li>
+        <li><strong>Sleeping:</strong> {{ status.state.pet.sleeping }}</li>
+        <li><strong>Theme:</strong> {{ status.state.active_theme_id }}</li>
+      </ul>
+    </article>
+
+    <article class="feature-card">
+      <h3>Plugin Integrations</h3>
+      <div class="pill-row">
+        {% if status.state.enabled_plugin_ids %}
+          {% for plugin_id in status.state.enabled_plugin_ids %}
+          {{ badge(plugin_id, "accent") }}
+          {% endfor %}
+        {% else %}
+          {{ badge("none") }}
+        {% endif %}
+      </div>
+      <p class="card-meta">Active backend: <code>{{ active_hardware_profile }}</code></p>
+    </article>
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("Command Deck", "Trigger pet interactions from the web interface.") }}
+  {% set command_descriptions = {
+    "feed": "Reduce hunger and stabilize mood.",
+    "play": "Boost social and excitement scores.",
+    "scratch": "Quick comfort interaction.",
+    "sleep": "Put the pet into resting mode.",
+    "wake": "Resume active cycle processing.",
+    "status": "Snapshot the current runtime state."
+  } %}
+  <div class="command-grid">
+    {% for command in ["feed", "play", "scratch", "sleep", "wake", "status"] %}
+    <article class="command-card">
+      <h3>{{ command | capitalize }}</h3>
+      <p>{{ command_descriptions[command] }}</p>
+      <form method="post" action="/dashboard/command">
+        <input type="hidden" name="command_type" value="{{ command }}" />
+        <input type="hidden" name="intensity" value="0.8" />
+        <button type="submit">Run {{ command }}</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("Quick Start", "Command endpoint example for scripted interactions.") }}
+  {% set command_example -%}
+$ curl -X POST http://<your-pi-host>:8000/dashboard/command \\
+    -d "command_type=feed" \\
+    -d "intensity=0.8"
+  {%- endset %}
+  {{ code_block(command_example, "Web Command Example") }}
+</section>
+
+<script src="/static/dashboard_display.js" defer></script>
+{% endblock %}
