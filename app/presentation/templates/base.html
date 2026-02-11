@@ -5,22 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ app_name }}</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/ui.js" defer></script>
     {% block extra_head %}{% endblock %}
   </head>
   <body>
+    {% set current_path = request.url.path %}
     <header class="topbar">
-      <h1>{{ app_name }}</h1>
-      <nav>
-        <a href="/dashboard">Dashboard</a>
-        <a href="/display">Display</a>
-        <a href="/plugins">Plugins</a>
-        <a href="/themes">Themes</a>
-        <a href="/settings">Settings</a>
-        <a href="/setup">Setup</a>
+      <div class="topbar-brand">
+        <a class="brand-mark" href="/dashboard">{{ app_name }}</a>
+        <p class="brand-tagline">Terminal-first pet runtime</p>
+      </div>
+
+      <nav class="topbar-nav" aria-label="Primary">
+        <a href="/dashboard" class="{% if current_path == '/dashboard' %}is-active{% endif %}">Dashboard</a>
+        <a href="/display" class="{% if current_path.startswith('/display') %}is-active{% endif %}">Display</a>
+        <a href="/plugins" class="{% if current_path.startswith('/plugins') %}is-active{% endif %}">Plugins</a>
+        <a href="/themes" class="{% if current_path.startswith('/themes') %}is-active{% endif %}">Themes</a>
+        <a href="/settings" class="{% if current_path.startswith('/settings') %}is-active{% endif %}">Settings</a>
+        <a href="/setup" class="{% if current_path.startswith('/setup') %}is-active{% endif %}">Quick Start</a>
       </nav>
+
+      <div class="topbar-cta">
+        <a href="/setup" class="btn btn-ghost">Run Setup</a>
+        <a href="/plugins" class="btn btn-primary">Manage Skills</a>
+      </div>
     </header>
-    <main class="container">
-      {% block content %}{% endblock %}
-    </main>
+
+    <main class="container">{% block content %}{% endblock %}</main>
+
+    <footer class="site-footer">
+      <p>Built for Raspberry Pi operators, makers, and plugin developers.</p>
+    </footer>
   </body>
 </html>

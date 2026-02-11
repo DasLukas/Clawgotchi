@@ -1,0 +1,44 @@
+{% macro section_header(title, subtitle="", anchor_id="") -%}
+<header class="section-block"{% if anchor_id %} id="{{ anchor_id }}"{% endif %}>
+  <div class="section-head">
+    <h2 class="section-heading">⟩ {{ title }}</h2>
+    {% if anchor_id %}
+    <a class="section-anchor" href="#{{ anchor_id }}" aria-label="Jump to {{ title }}">#</a>
+    {% endif %}
+  </div>
+  {% if subtitle %}
+  <p class="section-subtitle">{{ subtitle }}</p>
+  {% endif %}
+</header>
+{%- endmacro %}
+
+{% macro code_block(code, label="Terminal") -%}
+<div class="code-block" data-copy-root>
+  <div class="code-block-header">
+    <span class="code-block-label">{{ label }}</span>
+    <button type="button" class="btn btn-ghost btn-copy js-copy-button" data-copy-button>Copy</button>
+  </div>
+  <pre><code data-copy-source>{{ code | trim }}</code></pre>
+</div>
+{%- endmacro %}
+
+{% macro feature_card(title, description, cta_label="", cta_href="#") -%}
+<article class="feature-card">
+  <h3>{{ title }}</h3>
+  <p>{{ description }}</p>
+  {% if cta_label %}
+  <a class="card-link" href="{{ cta_href }}">{{ cta_label }} <span aria-hidden="true">→</span></a>
+  {% endif %}
+</article>
+{%- endmacro %}
+
+{% macro badge(text, tone="neutral") -%}
+<span class="pill pill-{{ tone }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro quote_card(quote, source) -%}
+<blockquote class="quote-card">
+  <p>"{{ quote }}"</p>
+  <cite>{{ source }}</cite>
+</blockquote>
+{%- endmacro %}

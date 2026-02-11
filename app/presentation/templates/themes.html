@@ -1,43 +1,64 @@
 {% extends "base.html" %}
+{% from "components.html" import badge, feature_card, section_header %}
 
 {% block content %}
-<section class="card">
-  <div class="split-header">
-    <h2>Theme Registry</h2>
+<section class="hero-panel">
+  <p class="kicker">Themes</p>
+  <h1 class="hero-title">Switch visual packs without touching runtime behavior.</h1>
+  <p class="hero-subtitle">
+    Inspect available theme manifests, activate a package, and keep plugin capability layers independent from visual styling.
+  </p>
+  <div class="hero-badges">
+    {{ badge(themes|length ~ " theme package(s)", "accent") }}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("Theme Registry", "Grid-based theme management with explicit active state.") }}
+  <div class="toolbar">
     <form method="post" action="/themes/rescan">
-      <button type="submit">Rescan themes</button>
+      <button type="submit" class="btn btn-ghost">Rescan Themes</button>
     </form>
+    <a href="/plugins" class="btn btn-ghost">Open Plugins</a>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Name</th>
-        <th>Version</th>
-        <th>Preview</th>
-        <th>Status</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for theme in themes %}
-      <tr>
-        <td>{{ theme.theme_id }}</td>
-        <td>{{ theme.name }}</td>
-        <td>{{ theme.version }}</td>
-        <td>{{ theme.manifest.preview }}</td>
-        <td>{{ "active" if theme.active else "inactive" }}</td>
-        <td>
-          {% if not theme.active %}
-          <form method="post" action="/themes/{{ theme.theme_id }}/activate">
-            <button type="submit">Activate</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="feature-grid">
+    {% for theme in themes %}
+    <article class="feature-card">
+      <div class="card-title-row">
+        <h3>{{ theme.name }}</h3>
+        {% if theme.active %}
+          {{ badge("active", "accent") }}
+        {% else %}
+          {{ badge("inactive") }}
+        {% endif %}
+      </div>
+      <p class="card-meta"><code>{{ theme.theme_id }}</code> · v{{ theme.version }}</p>
+      <p class="card-meta">Preview asset: <code>{{ theme.manifest.preview }}</code></p>
+
+      {% if not theme.active %}
+      <form method="post" action="/themes/{{ theme.theme_id }}/activate">
+        <button type="submit" class="btn btn-primary">Activate Theme</button>
+      </form>
+      {% else %}
+      <p class="muted">Currently active on the runtime.</p>
+      {% endif %}
+    </article>
+    {% else %}
+    <article class="feature-card">
+      <h3>No themes discovered</h3>
+      <p>Add theme folders in the configured theme directory and run a rescan.</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("Works With Everything", "Themes compose cleanly with plugins, hardware profiles, and web controls.") }}
+  <div class="feature-grid">
+    {{ feature_card("Plugin Compatibility", "Theme switching does not alter enabled plugin modules.", "Open Plugins", "/plugins") }}
+    {{ feature_card("Status Dashboard", "See the active theme reflected in runtime status metadata.", "Open Dashboard", "/dashboard") }}
+    {{ feature_card("Setup Wizard", "Default themes can still be selected in onboarding.", "Open Setup", "/setup") }}
+  </div>
 </section>
 {% endblock %}

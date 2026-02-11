@@ -1,51 +1,65 @@
 {% extends "base.html" %}
+{% from "components.html" import badge, feature_card, section_header %}
 
 {% block content %}
-<section class="card">
-  <div class="split-header">
-    <h2>Plugin Registry</h2>
-    <form method="post" action="/plugins/rescan">
-      <button type="submit">Rescan plugins</button>
-    </form>
+<section class="hero-panel">
+  <p class="kicker">Plugins</p>
+  <h1 class="hero-title">Manage runtime skills and hardware adapters.</h1>
+  <p class="hero-subtitle">
+    Enable behavior modules, rescan plugin directories, and switch hardware profiles from a single grid-first control surface.
+  </p>
+  <div class="hero-badges">
+    {{ badge(plugins|length ~ " plugin module(s)", "accent") }}
+    {{ badge(hardware_profiles|length ~ " hardware profile(s)") }}
+    {{ badge("Current: " ~ current_profile) }}
   </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Name</th>
-        <th>Version</th>
-        <th>Status</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for plugin in plugins %}
-      <tr>
-        <td>{{ plugin.plugin_id }}</td>
-        <td>{{ plugin.name }}</td>
-        <td>{{ plugin.version }}</td>
-        <td>{{ "enabled" if plugin.enabled else "disabled" }}</td>
-        <td>
-          {% if plugin.enabled %}
-          <form method="post" action="/plugins/{{ plugin.plugin_id }}/disable">
-            <button type="submit">Disable</button>
-          </form>
-          {% else %}
-          <form method="post" action="/plugins/{{ plugin.plugin_id }}/enable">
-            <button type="submit">Enable</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </section>
 
-<section class="card">
-  <h2>Hardware Profile</h2>
-  <form method="post" action="/plugins/hardware-profile" class="stack">
+<section class="stack">
+  {{ section_header("Plugins / Skills", "Toggle capability modules and inspect runtime package metadata.") }}
+  <div class="toolbar">
+    <form method="post" action="/plugins/rescan">
+      <button type="submit" class="btn btn-ghost">Rescan Plugins</button>
+    </form>
+    <a href="/themes" class="btn btn-ghost">Open Theme Registry</a>
+  </div>
+
+  <div class="feature-grid">
+    {% for plugin in plugins %}
+    <article class="feature-card plugin-card">
+      <div class="card-title-row">
+        <h3>{{ plugin.name }}</h3>
+        {% if plugin.enabled %}
+          {{ badge("enabled", "accent") }}
+        {% else %}
+          {{ badge("disabled") }}
+        {% endif %}
+      </div>
+      <p>{{ plugin.description }}</p>
+      <p class="card-meta"><code>{{ plugin.plugin_id }}</code> · v{{ plugin.version }}</p>
+
+      {% if plugin.enabled %}
+      <form method="post" action="/plugins/{{ plugin.plugin_id }}/disable">
+        <button type="submit" class="btn btn-ghost">Disable Plugin</button>
+      </form>
+      {% else %}
+      <form method="post" action="/plugins/{{ plugin.plugin_id }}/enable">
+        <button type="submit" class="btn btn-primary">Enable Plugin</button>
+      </form>
+      {% endif %}
+    </article>
+    {% else %}
+    <article class="feature-card">
+      <h3>No plugins detected</h3>
+      <p>Add plugin folders in the configured plugin directory and run a rescan.</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("Hardware Profile", "Activate the display backend for this host.") }}
+  <form method="post" action="/plugins/hardware-profile" class="feature-card stack">
     <label>
       Active profile
       <select name="hardware_profile">
@@ -57,7 +71,29 @@
         {% endfor %}
       </select>
     </label>
-    <button type="submit">Apply hardware profile</button>
+
+    <div class="button-row">
+      <button type="submit" class="btn btn-primary">Apply Hardware Profile</button>
+    </div>
   </form>
+
+  <div class="pill-row">
+    {% for profile in hardware_profiles %}
+      {% if profile.id == current_profile %}
+      {{ badge(profile.name ~ " (active)", "accent") }}
+      {% else %}
+      {{ badge(profile.name) }}
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("What It Does", "Plugin and theme registries stay decoupled but coordinated.") }}
+  <div class="feature-grid">
+    {{ feature_card("Theme Integration", "Switch to a different visual package without changing enabled plugins.", "Open Themes", "/themes") }}
+    {{ feature_card("Display Mirror", "Validate hardware changes instantly in the virtual display mirror.", "Open Display", "/display") }}
+    {{ feature_card("Settings", "Run hardware verification and software updates from the settings page.", "Open Settings", "/settings") }}
+  </div>
 </section>
 {% endblock %}

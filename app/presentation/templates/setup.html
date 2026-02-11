@@ -1,46 +1,121 @@
 {% extends "base.html" %}
+{% from "components.html" import badge, code_block, feature_card, quote_card, section_header %}
 
 {% block content %}
-<section class="card">
-  <h2>Initial Setup Wizard</h2>
+<section class="hero-panel">
+  <p class="kicker">Setup Wizard</p>
+  <h1 class="hero-title">Ship your pet runtime in one pass.</h1>
+  <p class="hero-subtitle">
+    Configure identity, visuals, hardware backend, and plugin skills with a compact, terminal-inspired onboarding flow.
+  </p>
+  <div class="hero-badges">
+    {{ badge("FastAPI", "accent") }}
+    {{ badge("Jinja2 UI") }}
+    {{ badge("Plugin-ready") }}
+  </div>
+</section>
+
+<section class="stack">
+  {{ section_header("What It Does", "A focused setup flow optimized for quick device bring-up.") }}
+  <div class="quote-grid">
+    {{ quote_card("Setup completes in minutes, even on fresh Raspberry Pi installs.", "Operator note") }}
+    {{ quote_card("Every runtime decision is explicit: no hidden defaults.", "Runtime behavior") }}
+    {{ quote_card("Hardware profile and plugin switches stay one click away.", "Plugin layer") }}
+  </div>
+</section>
+
+<section class="stack" id="quick-start">
+  {{ section_header("Quick Start", "Bootstrap from terminal or continue with the form below.", "quick-start-heading") }}
+  {% set quickstart_commands -%}
+$ curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo bash
+$ sudo systemctl enable --now clawgotchi.service
+$ open http://<your-pi-host>:8000/setup
+  {%- endset %}
+  {{ code_block(quickstart_commands, "Bootstrap Commands") }}
+</section>
+
+<section class="stack">
+  {{ section_header("Quick Start Flow", "Define the baseline runtime profile for this device.") }}
   <form method="post" action="/setup" class="stack">
-    <label>
-      Pet name
-      <input type="text" name="pet_name" required placeholder="Name your pet" />
-    </label>
+    <div class="feature-grid two-up">
+      <article class="feature-card flow-card">
+        <h3>Pet Identity</h3>
+        <label>
+          Pet name
+          <input type="text" name="pet_name" required placeholder="Name your pet" />
+        </label>
+      </article>
 
-    <label>
-      Theme
-      <select name="theme_id">
-        {% for theme in themes %}
-          <option value="{{ theme.theme_id }}">{{ theme.name }} ({{ theme.version }})</option>
-        {% endfor %}
-      </select>
-    </label>
+      <article class="feature-card flow-card">
+        <h3>Theme Package</h3>
+        <label>
+          Theme
+          <select name="theme_id">
+            {% for theme in themes %}
+            <option value="{{ theme.theme_id }}">{{ theme.name }} ({{ theme.version }})</option>
+            {% endfor %}
+          </select>
+        </label>
+      </article>
 
-    <fieldset>
-      <legend>Enable plugins</legend>
-      {% for plugin in plugins %}
-      <label class="checkbox-row">
-        <input type="checkbox" name="plugin_ids" value="{{ plugin.plugin_id }}" {% if plugin.enabled %}checked{% endif %} />
-        <span>{{ plugin.name }}: {{ plugin.description }}</span>
-      </label>
-      {% endfor %}
-    </fieldset>
+      <article class="feature-card flow-card">
+        <h3>Hardware Backend</h3>
+        <label>
+          Hardware profile
+          <select name="hardware_profile">
+            <option value="dummy">Dummy/Mock display</option>
+            {% for profile in hardware_profiles %}
+              {% if profile.id != "dummy" %}
+              <option value="{{ profile.id }}">{{ profile.name }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </label>
+      </article>
 
-    <label>
-      Hardware profile
-      <select name="hardware_profile">
-        <option value="dummy">Dummy/Mock display</option>
-        {% for profile in hardware_profiles %}
-          {% if profile.id != "dummy" %}
-          <option value="{{ profile.id }}">{{ profile.name }}</option>
-          {% endif %}
-        {% endfor %}
-      </select>
-    </label>
+      <article class="feature-card flow-card">
+        <h3>Runtime Defaults</h3>
+        <p>After setup you can adjust plugins, themes, and backend settings from the management pages.</p>
+        <div class="pill-row">
+          {{ badge(themes|length ~ " themes") }}
+          {{ badge(plugins|length ~ " plugins") }}
+          {{ badge(hardware_profiles|length ~ " hardware profiles") }}
+        </div>
+      </article>
 
-    <button type="submit">Complete setup</button>
+      <article class="feature-card flow-card span-full">
+        <fieldset class="plugin-fieldset">
+          <legend>Plugins / Skills</legend>
+          <div class="plugin-grid">
+            {% for plugin in plugins %}
+            <label class="plugin-toggle">
+              <input type="checkbox" name="plugin_ids" value="{{ plugin.plugin_id }}" {% if plugin.enabled %}checked{% endif %} />
+              <span class="plugin-toggle-title">{{ plugin.name }}</span>
+              <span class="plugin-toggle-desc">{{ plugin.description }}</span>
+              <span class="plugin-toggle-meta"><code>{{ plugin.plugin_id }}</code> · {{ plugin.version }}</span>
+            </label>
+            {% else %}
+            <p class="muted">No plugins discovered yet.</p>
+            {% endfor %}
+          </div>
+        </fieldset>
+      </article>
+    </div>
+
+    <div class="button-row">
+      <button type="submit" class="btn btn-primary">Complete Setup</button>
+      <a href="/plugins" class="btn btn-ghost">Review Plugins</a>
+      <a href="/themes" class="btn btn-ghost">Review Themes</a>
+    </div>
   </form>
+</section>
+
+<section class="stack">
+  {{ section_header("Works With Everything", "Composable themes, hardware backends, and plugin modules.") }}
+  <div class="feature-grid">
+    {{ feature_card("Theme Packs", themes|length ~ " theme package(s) are available for activation.", "Open Themes", "/themes") }}
+    {{ feature_card("Plugin Skills", plugins|length ~ " plugin module(s) can extend behavior and hardware support.", "Open Plugins", "/plugins") }}
+    {{ feature_card("Live Mirror", "Watch display output in real time through the virtual display page.", "Open Display", "/display") }}
+  </div>
 </section>
 {% endblock %}
