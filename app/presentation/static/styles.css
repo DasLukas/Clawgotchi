@@ -84,6 +84,10 @@ body {
   gap: 0.5rem;
 }
 
+.align-center {
+  align-items: center;
+}
+
 .status {
   margin: 0;
   padding: 0.6rem 0.8rem;
@@ -101,6 +105,22 @@ body {
   background: #fdeeed;
   border-color: #efc0bc;
   color: #6f221b;
+}
+
+.status-warning {
+  background: #fff7e7;
+  border-color: #f1d3a2;
+  color: #704f22;
+}
+
+.status-info {
+  background: #f3f6fb;
+  border-color: #c4d2eb;
+  color: #233d66;
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 .log-output {
@@ -126,6 +146,35 @@ button {
 
 button:hover {
   background: var(--accent-strong);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.update-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.update-spinner::before {
+  content: "";
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 input,

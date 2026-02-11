@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.application.services import SetupRequest
@@ -17,23 +18,175 @@ from app.presentation.dependencies import get_container
 TEMPLATE_DIRECTORY = Path(__file__).resolve().parent / "templates"
 PROJECT_ROOT = TEMPLATE_DIRECTORY.parent.parent.parent
 UPDATE_SCRIPT_PATH = Path(os.getenv("CLWG_UPDATE_SCRIPT", str(PROJECT_ROOT / "update.sh")))
+UPDATE_SERVICE_NAME = os.getenv("CLWG_UPDATE_SERVICE_NAME", "clawgotchi-update.service")
+UPDATE_STATUS_FILE = Path(os.getenv("CLWG_UPDATE_STATUS_FILE", "/tmp/clawgotchi-update-status.env"))
+UPDATE_SCRIPT_TIMEOUT_SECONDS = int(os.getenv("CLWG_UPDATE_TIMEOUT_SECONDS", "600"))
+UPDATE_SERVICE_START_TIMEOUT_SECONDS = int(os.getenv("CLWG_UPDATE_START_TIMEOUT_SECONDS", "30"))
+UPDATE_SERVICE_STATUS_TIMEOUT_SECONDS = int(os.getenv("CLWG_UPDATE_STATUS_TIMEOUT_SECONDS", "5"))
 templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
 
 router = APIRouter(tags=["web"])
 logger = logging.getLogger(__name__)
 
 
-def _settings_context(container, update_result: dict | None = None, hardware_result: dict | None = None) -> dict:
+def _settings_context(
+    container,
+    update_result: dict | None = None,
+    hardware_result: dict | None = None,
+    update_status: dict | None = None,
+) -> dict:
     current_profile = container.status_service.get_status()["state"].get("hardware_profile", "dummy")
     return {
         "app_name": container.config.app_name,
         "update_script_path": str(UPDATE_SCRIPT_PATH),
         "update_result": update_result,
+        "update_status": update_status,
         "hardware_profiles": container.plugin_service.list_hardware_profiles(),
         "current_hardware_profile": current_profile,
         "hardware_result": hardware_result,
         "hardware_status": container.get_hardware_status(),
+        "update_async_available": _is_async_update_available(),
+        "update_status_endpoint": "/settings/update/status",
+        "update_start_endpoint": "/settings/update/start",
+        "update_fallback_endpoint": "/settings/update",
     }
+
+
+def _is_async_update_available() -> bool:
+    return shutil.which("systemctl") is not None
+
+
+def _parse_bool(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_key_value_payload(payload: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for line in payload.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        parsed[key] = value.strip()
+    return parsed
+
+
+def _read_status_file_payload() -> dict[str, str]:
+    if not UPDATE_STATUS_FILE.exists():
+        return {}
+    try:
+        content = UPDATE_STATUS_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return _parse_key_value_payload(content)
+
+
+def _read_systemd_update_state() -> dict[str, str] | None:
+    if shutil.which("systemctl") is None:
+        return None
+    try:
+        completed = subprocess.run(
+            [
+                "systemctl",
+                "show",
+                UPDATE_SERVICE_NAME,
+                "--property=ActiveState,SubState,Result",
+                "--no-pager",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=UPDATE_SERVICE_STATUS_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {"error": "Unable to query systemd update service state."}
+
+    if completed.returncode != 0:
+        details = completed.stderr.strip() or completed.stdout.strip() or f"exit={completed.returncode}"
+        return {"error": details}
+
+    return _parse_key_value_payload(completed.stdout)
+
+
+def _build_update_status_payload() -> dict:
+    status_file_payload = _read_status_file_payload()
+    state = status_file_payload.get("state", "idle")
+    message = status_file_payload.get("message", "No update has been started yet.")
+    running = state in {"starting", "running", "rebooting"}
+
+    service_state = _read_systemd_update_state()
+    service_error = ""
+    service_details: dict[str, str] = {}
+    if service_state is not None:
+        if "error" in service_state:
+            service_error = service_state["error"]
+        else:
+            service_details = {
+                "active_state": service_state.get("ActiveState", ""),
+                "sub_state": service_state.get("SubState", ""),
+                "result": service_state.get("Result", ""),
+            }
+            if service_details["active_state"] in {"active", "activating", "reloading", "deactivating"}:
+                running = True
+                if state in {"idle", "succeeded", "failed"}:
+                    state = "running"
+                    message = "Update is running."
+            elif state == "idle" and service_details["result"] and service_details["result"] != "success":
+                state = "failed"
+                message = f"Update service reported '{service_details['result']}'."
+
+    if not status_file_payload and not service_details:
+        message = "No update status available yet."
+
+    return {
+        "state": state,
+        "running": running,
+        "message": message,
+        "started_at": status_file_payload.get("started_at", ""),
+        "updated_at": status_file_payload.get("updated_at", ""),
+        "reboot_required": _parse_bool(status_file_payload.get("reboot_required")),
+        "reboot_scheduled": _parse_bool(status_file_payload.get("reboot_scheduled")),
+        "exit_code": status_file_payload.get("exit_code", ""),
+        "service": service_details,
+        "service_error": service_error,
+    }
+
+
+def _start_update_service() -> tuple[bool, str]:
+    if shutil.which("systemctl") is None:
+        return False, "systemctl is not available on this host."
+
+    command = (
+        ["systemctl", "start", UPDATE_SERVICE_NAME]
+        if os.geteuid() == 0
+        else ["sudo", "-n", "systemctl", "start", UPDATE_SERVICE_NAME]
+    )
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=UPDATE_SERVICE_START_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "Starting the update service timed out."
+    except OSError as exc:
+        return False, f"Unable to start update service: {exc}"
+
+    if completed.returncode == 0:
+        return True, f"Update service '{UPDATE_SERVICE_NAME}' started."
+
+    details = completed.stderr.strip() or completed.stdout.strip() or f"exit={completed.returncode}"
+    if os.geteuid() != 0:
+        details = (
+            f"{details} Configure sudoers to allow 'systemctl start {UPDATE_SERVICE_NAME}' "
+            "without password prompts."
+        )
+    return False, f"Unable to start update service '{UPDATE_SERVICE_NAME}': {details}"
 
 
 @router.get("/")
@@ -203,10 +356,14 @@ async def themes_activate(theme_id: str, container=Depends(get_container)) -> Re
 
 @router.get("/settings")
 async def settings_page(request: Request, container=Depends(get_container)):
+    update_status = await asyncio.to_thread(_build_update_status_payload)
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
-        context=_settings_context(container=container),
+        context=_settings_context(
+            container=container,
+            update_status=update_status,
+        ),
     )
 
 
@@ -244,8 +401,40 @@ async def settings_hardware_update(
         context=_settings_context(
             container=container,
             hardware_result=hardware_result,
+            update_status=await asyncio.to_thread(_build_update_status_payload),
         ),
     )
+
+
+@router.post("/settings/update/start")
+async def settings_update_start():
+    current_status = await asyncio.to_thread(_build_update_status_payload)
+    if current_status.get("running", False):
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "ok": False,
+                "summary": "An update is already running.",
+                "status": current_status,
+            },
+        )
+
+    ok, summary = await asyncio.to_thread(_start_update_service)
+    updated_status = await asyncio.to_thread(_build_update_status_payload)
+    http_status = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(
+        status_code=http_status,
+        content={
+            "ok": ok,
+            "summary": summary,
+            "status": updated_status,
+        },
+    )
+
+
+@router.get("/settings/update/status")
+async def settings_update_status():
+    return JSONResponse(content=await asyncio.to_thread(_build_update_status_payload))
 
 
 @router.post("/settings/update")
@@ -272,7 +461,7 @@ async def settings_update(request: Request, container=Depends(get_container)):
                 cwd=str(PROJECT_ROOT),
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=UPDATE_SCRIPT_TIMEOUT_SECONDS,
             )
             result = {
                 "ok": completed.returncode == 0,
@@ -287,7 +476,7 @@ async def settings_update(request: Request, container=Depends(get_container)):
         except subprocess.TimeoutExpired:
             result = {
                 "ok": False,
-                "summary": "Update timed out after 600 seconds.",
+                "summary": f"Update timed out after {UPDATE_SCRIPT_TIMEOUT_SECONDS} seconds.",
                 "stdout": "",
                 "stderr": "",
             }
@@ -298,6 +487,7 @@ async def settings_update(request: Request, container=Depends(get_container)):
         context=_settings_context(
             container=container,
             update_result=result,
+            update_status=await asyncio.to_thread(_build_update_status_payload),
         ),
     )
 

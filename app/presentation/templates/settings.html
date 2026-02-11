@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set status_payload = update_status if update_status else {} %}
+{% set update_state = status_payload.get("state", "idle") %}
+{% if update_state in ["starting", "running", "rebooting"] %}
+  {% set update_state_class = "status-warning" %}
+{% elif update_state == "succeeded" %}
+  {% set update_state_class = "status-success" %}
+{% elif update_state == "failed" %}
+  {% set update_state_class = "status-error" %}
+{% else %}
+  {% set update_state_class = "status-info" %}
+{% endif %}
+
 <section class="card stack">
   <h2>Settings</h2>
   <h3>Hardware</h3>
@@ -30,16 +42,49 @@
   {% endif %}
 
   <h3>Software Update</h3>
-  <p>Run the project update script from the web interface.</p>
+  <p>Run the project update service from the web interface.</p>
   <p><strong>Update script:</strong> <code>{{ update_script_path }}</code></p>
-  <form method="post" action="/settings/update">
-    <button type="submit">Run update now</button>
+
+  <form
+    id="update-start-form"
+    class="stack"
+    method="post"
+    action="{{ update_start_endpoint if update_async_available else update_fallback_endpoint }}"
+    data-start-endpoint="{{ update_start_endpoint }}"
+    data-fallback-endpoint="{{ update_fallback_endpoint }}"
+    data-status-endpoint="{{ update_status_endpoint }}"
+    data-async-enabled="{{ 'true' if update_async_available else 'false' }}"
+  >
+    <div class="button-row align-center">
+      <button
+        id="update-start-button"
+        type="submit"
+        {% if update_async_available and update_state in ["starting", "running", "rebooting"] %}disabled{% endif %}
+      >
+        Run update now
+      </button>
+      <span
+        id="update-loading-indicator"
+        class="update-spinner{% if (not update_async_available) or update_state not in ["starting", "running", "rebooting"] %} is-hidden{% endif %}"
+      >
+        Update in progress...
+      </span>
+    </div>
   </form>
+
+  {% if not update_async_available %}
+  <p class="status status-info">Async update mode is unavailable on this host. Falling back to synchronous execution.</p>
+  {% endif %}
+
+  <p id="update-status-message" class="status {{ update_state_class }}">{{ status_payload.get("message", "No update status available yet.") }}</p>
+  <p id="update-reconnect-message" class="status status-warning is-hidden">Connection lost during update. Retrying...</p>
+  <p id="update-service-error" class="status status-error{% if not status_payload.get('service_error') %} is-hidden{% endif %}">{{ status_payload.get("service_error", "") }}</p>
+  <p><strong>Last status update:</strong> <span id="update-last-updated">{{ status_payload.get("updated_at", "n/a") }}</span></p>
 </section>
 
 {% if update_result %}
 <section class="card stack">
-  <h2>Update Result</h2>
+  <h2>Update Result (Synchronous Fallback)</h2>
   <p class="status {{ 'status-success' if update_result.ok else 'status-error' }}">{{ update_result.summary }}</p>
 
   {% if update_result.stdout %}
@@ -53,4 +98,176 @@
   {% endif %}
 </section>
 {% endif %}
+
+<script>
+(() => {
+  const form = document.getElementById("update-start-form");
+  if (!form) {
+    return;
+  }
+
+  const startEndpoint = form.dataset.startEndpoint;
+  const fallbackEndpoint = form.dataset.fallbackEndpoint;
+  const statusEndpoint = form.dataset.statusEndpoint;
+  const asyncEnabled = form.dataset.asyncEnabled === "true";
+  const startButton = document.getElementById("update-start-button");
+  const loadingIndicator = document.getElementById("update-loading-indicator");
+  const statusMessage = document.getElementById("update-status-message");
+  const reconnectMessage = document.getElementById("update-reconnect-message");
+  const serviceError = document.getElementById("update-service-error");
+  const lastUpdated = document.getElementById("update-last-updated");
+
+  const RUNNING_STATES = new Set(["starting", "running", "rebooting"]);
+  const LOST_CONNECTION_TEXT = "Connection lost during update. Retrying...";
+  const REBOOT_WAIT_TEXT = "Reboot requested. Waiting for reconnect...";
+
+  let pollHandle = null;
+
+  if (!asyncEnabled) {
+    if (form.getAttribute("action") !== fallbackEndpoint) {
+      form.setAttribute("action", fallbackEndpoint);
+    }
+    return;
+  }
+
+  function classForState(state) {
+    if (RUNNING_STATES.has(state)) {
+      return "status-warning";
+    }
+    if (state === "succeeded") {
+      return "status-success";
+    }
+    if (state === "failed") {
+      return "status-error";
+    }
+    return "status-info";
+  }
+
+  function setLoading(active) {
+    if (startButton) {
+      startButton.disabled = active;
+    }
+    if (loadingIndicator) {
+      loadingIndicator.classList.toggle("is-hidden", !active);
+    }
+  }
+
+  function setStatus(state, message) {
+    if (!statusMessage) {
+      return;
+    }
+    statusMessage.className = `status ${classForState(state)}`;
+    statusMessage.textContent = message;
+  }
+
+  function setServiceError(message) {
+    if (!serviceError) {
+      return;
+    }
+    const hasMessage = Boolean(message);
+    serviceError.classList.toggle("is-hidden", !hasMessage);
+    serviceError.textContent = message || "";
+  }
+
+  function setReconnectMessage(visible, message = LOST_CONNECTION_TEXT) {
+    if (!reconnectMessage) {
+      return;
+    }
+    reconnectMessage.textContent = message;
+    reconnectMessage.classList.toggle("is-hidden", !visible);
+  }
+
+  function setUpdatedAt(value) {
+    if (!lastUpdated) {
+      return;
+    }
+    lastUpdated.textContent = value || "n/a";
+  }
+
+  function schedulePoll(delayMs = 2000) {
+    if (pollHandle !== null) {
+      clearTimeout(pollHandle);
+    }
+    pollHandle = window.setTimeout(() => {
+      pollHandle = null;
+      void refreshStatus();
+    }, delayMs);
+  }
+
+  function applyStatusPayload(payload) {
+    const state = payload.state || "idle";
+    const summary = payload.message || "No update status available yet.";
+    setStatus(state, summary);
+    setServiceError(payload.service_error || "");
+    setUpdatedAt(payload.updated_at || "");
+
+    if (state === "rebooting") {
+      setReconnectMessage(true, REBOOT_WAIT_TEXT);
+    } else {
+      setReconnectMessage(false);
+    }
+
+    if (RUNNING_STATES.has(state)) {
+      setLoading(true);
+      schedulePoll(2000);
+    } else {
+      setLoading(false);
+    }
+  }
+
+  async function refreshStatus() {
+    try {
+      const response = await fetch(statusEndpoint, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      applyStatusPayload(payload);
+    } catch (_error) {
+      setLoading(true);
+      setReconnectMessage(true, LOST_CONNECTION_TEXT);
+      schedulePoll(2000);
+    }
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    setLoading(true);
+    setReconnectMessage(false);
+    setStatus("starting", "Starting update service...");
+    setServiceError("");
+
+    try {
+      const response = await fetch(startEndpoint, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        setLoading(false);
+        setStatus("failed", payload.summary || "Unable to start update.");
+        setServiceError(payload.status?.service_error || "");
+        return;
+      }
+
+      if (payload.status) {
+        applyStatusPayload(payload.status);
+      }
+      setStatus("starting", payload.summary || "Update started.");
+      schedulePoll(1000);
+    } catch (_error) {
+      setLoading(false);
+      setStatus("failed", "Unable to start update.");
+    }
+  });
+
+  void refreshStatus();
+})();
+</script>
 {% endblock %}

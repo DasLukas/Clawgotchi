@@ -330,7 +330,7 @@ enable_spi_noninteractive() {
 
 write_hardware_sudoers_policy() {
   local sudoers_file="/etc/sudoers.d/clawgotchi-hw"
-  local sudoers_line="${SELECTED_USER} ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt"
+  local sudoers_line="${SELECTED_USER} ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt, /usr/bin/systemctl start clawgotchi-update.service"
 
   if [[ "${DRYRUN}" == "1" ]]; then
     log "DRYRUN: write hardware sudoers policy to ${sudoers_file}"
@@ -530,37 +530,14 @@ write_update_script() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-PROJECT_ROOT="${PROJECT_ROOT}"
-VENV_PIP="${VENV_PATH}/bin/pip"
-APP_USER="${SELECTED_USER}"
-GIT_URL="${CLWG_GIT_SSH_URL}"
+export CLWG_USER="${SELECTED_USER}"
+export CLWG_REMOTE="origin"
+export CLWG_BRANCH="main"
+export CLWG_REMOTE_URL="${CLWG_GIT_SSH_URL}"
+export CLWG_SERVICE_NAME="clawgotchi.service"
+export CLWG_UPDATE_STATUS_FILE="/tmp/clawgotchi-update-status.env"
 
-log() {
-  printf "[%s] %s\\n" "\$(date "+%Y-%m-%d %H:%M:%S")" "\$*"
-}
-
-on_error() {
-  local exit_code=\$?
-  local line_no="\$1"
-  log "ERROR: command failed at line \${line_no}: \${BASH_COMMAND} (exit=\${exit_code})"
-  exit "\${exit_code}"
-}
-trap 'on_error "\$LINENO"' ERR
-
-run_as_user() {
-  local cmd="\$1"
-  su - "\${APP_USER}" -c "\${cmd}"
-}
-
-run_as_user "cd '\${PROJECT_ROOT}' && git remote set-url origin '\${GIT_URL}' && git fetch origin && git checkout main && git pull --ff-only origin main"
-
-if [[ ! -x "\${VENV_PIP}" ]]; then
-  run_as_user "python3 -m venv '${VENV_PATH}'"
-fi
-
-run_as_user "cd '\${PROJECT_ROOT}' && '\${VENV_PIP}' install -e ."
-systemctl restart clawgotchi.service
-log "Update complete."
+exec "${PROJECT_ROOT}/update.sh"
 EOF
 
   run chmod 0755 "${UPDATE_SCRIPT}"

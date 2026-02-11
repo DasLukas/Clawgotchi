@@ -182,14 +182,14 @@ sudo tee /usr/local/bin/clawgotchi-update.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_USER="clawgotchi"
-PROJECT_ROOT="/opt/clawgotchi"
-VENV_PIP="/opt/clawgotchi/.venv/bin/pip"
-GIT_URL="git@github.com:ORG/REPO.git"
+export CLWG_USER="clawgotchi"
+export CLWG_REMOTE="origin"
+export CLWG_BRANCH="main"
+export CLWG_REMOTE_URL="git@github.com:ORG/REPO.git"
+export CLWG_SERVICE_NAME="clawgotchi.service"
+export CLWG_UPDATE_STATUS_FILE="/tmp/clawgotchi-update-status.env"
 
-su - "${APP_USER}" -c "cd '${PROJECT_ROOT}' && git remote set-url origin '${GIT_URL}' && git fetch origin && git checkout main && git pull --ff-only origin main"
-su - "${APP_USER}" -c "cd '${PROJECT_ROOT}' && '${VENV_PIP}' install -e ."
-systemctl restart clawgotchi.service
+exec /opt/clawgotchi/update.sh
 EOF
 sudo chmod 755 /usr/local/bin/clawgotchi-update.sh
 sudo chown root:root /usr/local/bin/clawgotchi-update.sh
@@ -262,7 +262,7 @@ What happens automatically:
 
 ```bash
 sudo tee /etc/sudoers.d/clawgotchi-hw >/dev/null <<'EOF'
-clawgotchi ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt
+clawgotchi ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt, /usr/bin/systemctl start clawgotchi-update.service
 EOF
 sudo chmod 0440 /etc/sudoers.d/clawgotchi-hw
 ```
@@ -278,7 +278,7 @@ python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw
 Automatisches Update:
 
 - Der Timer `clawgotchi-update.timer` startet taeglich um `03:30` (Zeitzone `Europe/Berlin`) den Update-Service.
-- Update-Ablauf: `git fetch` -> `git checkout main` -> `git pull --ff-only` -> `pip install -e .` -> `systemctl restart clawgotchi.service`.
+- Update-Ablauf: `git fetch` -> `git checkout main` -> `git pull --ff-only` -> `pip install -e .` -> `systemctl restart clawgotchi.service` -> optional reboot when the update newly sets a reboot-required marker.
 
 Manuelles Update aus dem Projektverzeichnis:
 
@@ -291,6 +291,7 @@ Hinweis:
 - Das Skript bricht bei lokalen Git-Aenderungen bewusst ab (kein automatisches Merge).
 - Wenn `update.sh` ohne root ausgefuehrt wird, wird der Service nicht neu gestartet.
 - Git/SSH-Schritte laufen mit dem App-User `clawgotchi` (override via `CLWG_USER=<user>`).
+- Das Skript schreibt den Update-Status nach `${CLWG_UPDATE_STATUS_FILE:-/tmp/clawgotchi-update-status.env}` (genutzt vom Web-UI Polling).
 - Fuer Update inklusive Service-Neustart:
 
 ```bash
@@ -306,7 +307,8 @@ sudo systemctl start clawgotchi-update.service
 Update ueber Webinterface:
 
 - Unter `Settings` kann ein Update direkt gestartet werden.
-- Die Seite zeigt den Rueckgabestatus sowie `stdout`/`stderr` des Skripts an.
+- Die Seite zeigt waehrend des Updates einen Ladezustand und pollt den Update-Status.
+- Bei Service-Restart/Reboot versucht die Seite automatisch zu reconnecten und zeigt danach wieder den finalen Status an.
 
 ## Configuration
 
