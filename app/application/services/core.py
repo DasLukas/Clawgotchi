@@ -6,7 +6,6 @@ import logging
 import time
 from typing import Any
 
-from app.application.hardware_aliases import normalize_hardware_profile_id, normalize_plugin_id
 from app.application.ports.display import DisplayDriver
 from app.application.command_processing import CommandQueueProtocol
 from app.application.interfaces import (
@@ -25,6 +24,17 @@ from app.domain.snapshots import StateSnapshot
 from app.domain.value_objects import PetCommand, utc_now
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_plugin_id(plugin_id: str) -> str:
+    return plugin_id.strip()
+
+
+def _normalize_hardware_profile_id(profile_id: str, default: str = "dummy") -> str:
+    normalized = profile_id.strip()
+    if not normalized:
+        return default
+    return normalized
 
 
 @dataclass(slots=True)
@@ -283,7 +293,7 @@ class InitializeDeviceService:
         state = self._state_repository.load_or_create(request.pet_name)
         state.pet.name = request.pet_name.strip() or state.pet.name
         state.pet_state.name = state.pet.name
-        state.hardware_profile = normalize_hardware_profile_id(request.hardware_profile, default="dummy")
+        state.hardware_profile = _normalize_hardware_profile_id(request.hardware_profile, default="dummy")
 
         available_themes = {item["theme_id"] for item in self._theme_repository.list_themes()}
         if request.theme_id in available_themes:
@@ -293,9 +303,9 @@ class InitializeDeviceService:
         available_plugins = {item["plugin_id"] for item in self._plugin_repository.list_plugins()}
         selected_plugins: list[str] = []
         for raw_plugin_id in request.plugin_ids:
-            mapped_plugin_id = normalize_plugin_id(raw_plugin_id)
-            if mapped_plugin_id in available_plugins:
-                selected_plugins.append(mapped_plugin_id)
+            normalized_plugin_id = _normalize_plugin_id(raw_plugin_id)
+            if normalized_plugin_id in available_plugins:
+                selected_plugins.append(normalized_plugin_id)
         selected_plugins = list(dict.fromkeys(selected_plugins))
 
         if state.hardware_profile != "dummy":
@@ -335,14 +345,14 @@ class InitializeDeviceService:
         return (self._settings_repository.get("setup.completed", "false") or "false").lower() == "true"
 
     def _find_plugin_for_profile(self, profile_id: str) -> str | None:
-        normalized_profile = normalize_hardware_profile_id(profile_id, default="dummy")
+        normalized_profile = _normalize_hardware_profile_id(profile_id, default="dummy")
         for plugin in self._plugin_repository.list_plugins():
             plugin_id = str(plugin.get("plugin_id", "")).strip()
             metadata = plugin.get("manifest", {}).get("metadata", {})
             for item in metadata.get("hardware_profiles", []):
                 if not isinstance(item, dict):
                     continue
-                if normalize_hardware_profile_id(str(item.get("id", "")).strip(), default="dummy") == normalized_profile:
+                if _normalize_hardware_profile_id(str(item.get("id", "")).strip(), default="dummy") == normalized_profile:
                     return plugin_id
         return None
 
@@ -366,25 +376,25 @@ class PluginService:
         manifests = self._plugin_loader.scan()
         self._plugin_repository.upsert_manifests(manifests)
         self._plugin_runtime.set_manifests(manifests)
-        enabled_ids = [normalize_plugin_id(plugin_id) for plugin_id in self._plugin_repository.list_enabled_ids()]
+        enabled_ids = [_normalize_plugin_id(plugin_id) for plugin_id in self._plugin_repository.list_enabled_ids()]
         enabled_ids = [plugin_id for plugin_id in dict.fromkeys(enabled_ids) if plugin_id]
         await self._plugin_runtime.synchronize_enabled(enabled_ids)
         return self._plugin_repository.list_plugins()
 
     async def install_plugin(self, plugin_id: str) -> dict[str, Any]:
-        normalized_plugin_id = normalize_plugin_id(plugin_id)
+        normalized_plugin_id = _normalize_plugin_id(plugin_id)
         plugins = await self.rescan()
         if normalized_plugin_id not in {plugin["plugin_id"] for plugin in plugins}:
             raise ValueError(f"Plugin '{normalized_plugin_id}' was not found in filesystem plugins.")
         return await self.enable(normalized_plugin_id)
 
     async def enable(self, plugin_id: str) -> dict[str, Any]:
-        normalized_plugin_id = normalize_plugin_id(plugin_id)
+        normalized_plugin_id = _normalize_plugin_id(plugin_id)
         self._plugin_repository.set_enabled(normalized_plugin_id, True)
         await self._plugin_runtime.activate(normalized_plugin_id)
 
         state = self._state_repository.load_or_create(self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
-        enabled = {normalize_plugin_id(value) for value in state.enabled_plugin_ids}
+        enabled = {_normalize_plugin_id(value) for value in state.enabled_plugin_ids}
         enabled.add(normalized_plugin_id)
         state.enabled_plugin_ids = sorted(value for value in enabled if value)
         self._state_repository.save_state(
@@ -396,15 +406,15 @@ class PluginService:
         return self._find_plugin(normalized_plugin_id)
 
     async def disable(self, plugin_id: str) -> dict[str, Any]:
-        normalized_plugin_id = normalize_plugin_id(plugin_id)
+        normalized_plugin_id = _normalize_plugin_id(plugin_id)
         self._plugin_repository.set_enabled(normalized_plugin_id, False)
         await self._plugin_runtime.deactivate(normalized_plugin_id)
 
         state = self._state_repository.load_or_create(self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
         state.enabled_plugin_ids = [
-            normalize_plugin_id(value)
+            _normalize_plugin_id(value)
             for value in state.enabled_plugin_ids
-            if normalize_plugin_id(value) != normalized_plugin_id
+            if _normalize_plugin_id(value) != normalized_plugin_id
         ]
         state.enabled_plugin_ids = sorted(value for value in set(state.enabled_plugin_ids) if value)
         self._state_repository.save_state(
@@ -445,7 +455,7 @@ class PluginService:
         return profiles
 
     async def activate_hardware_profile(self, profile_id: str) -> dict[str, Any]:
-        normalized = normalize_hardware_profile_id(profile_id, default="dummy")
+        normalized = _normalize_hardware_profile_id(profile_id, default="dummy")
         if normalized != "dummy":
             provider_plugin = self._find_plugin_for_profile(normalized)
             if provider_plugin is None:
@@ -458,7 +468,7 @@ class PluginService:
         return {"hardware_profile": normalized, "state_version": state_version}
 
     def set_hardware_profile(self, profile_id: str) -> int:
-        normalized = normalize_hardware_profile_id(profile_id, default="dummy")
+        normalized = _normalize_hardware_profile_id(profile_id, default="dummy")
         state = self._state_repository.load_or_create(self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
         state.hardware_profile = normalized
         state_version = self._state_repository.save_state(
@@ -471,20 +481,20 @@ class PluginService:
         return state_version
 
     def _find_plugin(self, plugin_id: str) -> dict[str, Any]:
-        normalized_plugin_id = normalize_plugin_id(plugin_id)
+        normalized_plugin_id = _normalize_plugin_id(plugin_id)
         for plugin in self._plugin_repository.list_plugins():
             if plugin["plugin_id"] == normalized_plugin_id:
                 return plugin
         raise ValueError(f"Plugin '{normalized_plugin_id}' was not found.")
 
     def _find_plugin_for_profile(self, profile_id: str) -> str | None:
-        normalized_profile = normalize_hardware_profile_id(profile_id, default="dummy")
+        normalized_profile = _normalize_hardware_profile_id(profile_id, default="dummy")
         for plugin in self._plugin_repository.list_plugins():
             manifest = plugin.get("manifest", {})
             for item in manifest.get("metadata", {}).get("hardware_profiles", []):
                 if not isinstance(item, dict):
                     continue
-                if normalize_hardware_profile_id(str(item.get("id", "")).strip(), default="dummy") == normalized_profile:
+                if _normalize_hardware_profile_id(str(item.get("id", "")).strip(), default="dummy") == normalized_profile:
                     return str(plugin.get("plugin_id", "")).strip()
         return None
 
@@ -578,20 +588,20 @@ class StateTransferService:
                 "pet_name": restored_state.pet.name,
             }
 
-        restored_state.hardware_profile = normalize_hardware_profile_id(restored_state.hardware_profile, default="dummy")
+        restored_state.hardware_profile = _normalize_hardware_profile_id(restored_state.hardware_profile, default="dummy")
         restored_state.enabled_plugin_ids = [
-            normalize_plugin_id(plugin_id)
+            _normalize_plugin_id(plugin_id)
             for plugin_id in restored_state.enabled_plugin_ids
-            if normalize_plugin_id(plugin_id)
+            if _normalize_plugin_id(plugin_id)
         ]
         restored_state.enabled_plugin_ids = list(dict.fromkeys(restored_state.enabled_plugin_ids))
         state_version = self._state_repository.restore_state(restored_state, source="import")
 
         known_plugins = {plugin["plugin_id"] for plugin in self._plugin_repository.list_plugins()}
         selected_plugins = [
-            normalize_plugin_id(plugin_id)
+            _normalize_plugin_id(plugin_id)
             for plugin_id in restored_state.enabled_plugin_ids
-            if normalize_plugin_id(plugin_id) in known_plugins
+            if _normalize_plugin_id(plugin_id) in known_plugins
         ]
         selected_plugins = [plugin_id for plugin_id in dict.fromkeys(selected_plugins) if plugin_id]
         for plugin_id in known_plugins:

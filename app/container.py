@@ -8,7 +8,6 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from app.application.hardware_aliases import normalize_hardware_profile_id, normalize_plugin_id
 from app.application.ports.display import DisplayDriver, Frame
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
@@ -41,6 +40,13 @@ from app.domain.models.pet_state import PetState
 from config.settings import DisplaySettings
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_hardware_profile_id(profile_id: str, default: str = "dummy") -> str:
+    normalized = profile_id.strip()
+    if not normalized:
+        return default
+    return normalized
 
 
 class ApplicationContainer:
@@ -169,7 +175,7 @@ class ApplicationContainer:
 
         themes = self.theme_service.list_themes()
         state = self.state_repository.load_or_create(self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
-        state = self._migrate_legacy_state_ids(state)
+        state = self._sanitize_state_configuration(state)
         available_theme_ids = {theme["theme_id"] for theme in themes}
         if themes and state.active_theme_id not in available_theme_ids:
             state.active_theme_id = themes[0]["theme_id"]
@@ -218,9 +224,7 @@ class ApplicationContainer:
         await self.plugin_runtime.shutdown()
 
     def refresh_display_driver(self, profile_id: str) -> dict[str, Any]:
-        normalized = normalize_hardware_profile_id(profile_id, default="dummy")
-        if profile_id.strip() and normalized != profile_id.strip():
-            self._persist_hardware_profile_alias(normalized)
+        normalized = _normalize_hardware_profile_id(profile_id, default="dummy")
 
         if normalized == "dummy":
             self._switch_display_driver(self._create_dummy_driver())
@@ -337,41 +341,38 @@ class ApplicationContainer:
         self._hardware_status = status
         return status
 
-    def _persist_hardware_profile_alias(self, normalized_profile: str) -> None:
-        pet_name = self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
-        state = self.state_repository.load_or_create(pet_name)
-        if state.hardware_profile != normalized_profile:
+    def _sanitize_state_configuration(self, state: Any) -> Any:
+        changed = False
+
+        known_plugin_ids = {plugin["plugin_id"] for plugin in self.plugin_repository.list_plugins()}
+        sanitized_enabled_plugins = sorted(
+            plugin_id
+            for plugin_id in dict.fromkeys(state.enabled_plugin_ids)
+            if plugin_id in known_plugin_ids
+        )
+        if sanitized_enabled_plugins != state.enabled_plugin_ids:
+            state.enabled_plugin_ids = sanitized_enabled_plugins
+            changed = True
+
+        normalized_profile = _normalize_hardware_profile_id(state.hardware_profile, default="dummy")
+        known_profile_ids = {profile["id"] for profile in self.plugin_service.list_hardware_profiles()}
+        if normalized_profile not in known_profile_ids:
+            normalized_profile = "dummy"
+
+        if normalized_profile != state.hardware_profile:
             state.hardware_profile = normalized_profile
-            self.state_repository.save_state(
-                state=state,
-                source="legacy_hardware_profile_migrated",
-                command_id=None,
-                events=[],
-            )
-        self.settings_repository.set("setup.hardware_profile", normalized_profile)
+            changed = True
 
-    def _migrate_legacy_state_ids(self, state: Any) -> Any:
-        available_plugin_ids = {plugin["plugin_id"] for plugin in self.plugin_repository.list_plugins()}
-        normalized_plugins = [
-            normalize_plugin_id(plugin_id)
-            for plugin_id in state.enabled_plugin_ids
-            if normalize_plugin_id(plugin_id) in available_plugin_ids
-        ]
-        normalized_plugins = sorted(value for value in set(normalized_plugins) if value)
-        normalized_profile = normalize_hardware_profile_id(state.hardware_profile, default="dummy")
-
-        if normalized_plugins == state.enabled_plugin_ids and normalized_profile == state.hardware_profile:
+        if not changed:
             return state
 
-        state.enabled_plugin_ids = normalized_plugins
-        state.hardware_profile = normalized_profile
         self.state_repository.save_state(
             state=state,
-            source="legacy_plugin_alias_migrated",
+            source="state_configuration_sanitized",
             command_id=None,
             events=[],
         )
-        self.settings_repository.set("setup.hardware_profile", normalized_profile)
+        self.settings_repository.set("setup.hardware_profile", state.hardware_profile)
         return state
 
     def _render_current_pet_frame(self) -> None:

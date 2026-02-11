@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 from app.application.services import PluginService
 
@@ -117,7 +118,7 @@ def test_activate_hardware_profile_enables_provider_plugin() -> None:
     assert state_repository.state.hardware_profile == "waveshare_epaper_27bw"
 
 
-def test_activate_hardware_profile_maps_legacy_profile_id() -> None:
+def test_activate_hardware_profile_rejects_unknown_profile_id() -> None:
     plugin_repository = _PluginRepositoryForActivation()
     state_repository = _StateRepository()
     settings_repository = _SettingsRepository()
@@ -129,13 +130,11 @@ def test_activate_hardware_profile_maps_legacy_profile_id() -> None:
         settings_repository=settings_repository,
     )
 
-    asyncio.run(service.activate_hardware_profile("waveshare_2in7"))
-
-    assert plugin_repository.list_plugins()[0]["enabled"] is True
-    assert state_repository.state.hardware_profile == "waveshare_epaper_27bw"
+    with pytest.raises(ValueError):
+        asyncio.run(service.activate_hardware_profile("unknown_profile"))
 
 
-def test_enable_maps_legacy_plugin_id() -> None:
+def test_enable_rejects_unknown_plugin_id() -> None:
     plugin_repository = _PluginRepositoryForActivation()
     state_repository = _StateRepository()
     settings_repository = _SettingsRepository()
@@ -147,7 +146,5 @@ def test_enable_maps_legacy_plugin_id() -> None:
         settings_repository=settings_repository,
     )
 
-    asyncio.run(service.enable("waveshare_2in7_display"))
-
-    assert plugin_repository.list_plugins()[0]["enabled"] is True
-    assert state_repository.state.enabled_plugin_ids == ["waveshare_epaper_27bw"]
+    with pytest.raises(ValueError):
+        asyncio.run(service.enable("unknown_plugin"))
