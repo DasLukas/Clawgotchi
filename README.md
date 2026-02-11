@@ -273,6 +273,9 @@ sudo chmod 0440 /etc/sudoers.d/clawgotchi-hw
 python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw
 ```
 
+If `clawgotchi.service` is running, the CLI test may fail because the service already holds GPIO/SPI resources.  
+Stop the service first, or run the test with `--force`.
+
 ## Updating
 
 Automatisches Update:

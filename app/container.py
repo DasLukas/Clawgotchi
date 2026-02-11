@@ -295,6 +295,10 @@ class ApplicationContainer:
             driver.init()
         except Exception:
             logger.exception("Display driver initialization failed before activation.")
+            try:
+                driver.sleep()
+            except Exception:
+                logger.debug("Failed to cleanup candidate display driver after init error.", exc_info=True)
             raise
 
         try:

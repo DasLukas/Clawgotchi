@@ -21,6 +21,7 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
 
     def init(self) -> None:
         if self._epd is None:
+            self._release_gpio_resources()
             module = self._load_epd_module()
             self._epd = module.EPD()
             self._module_name = module.__name__
@@ -39,10 +40,13 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
         )
 
     def sleep(self) -> None:
-        if self._epd is None:
-            return
-        if hasattr(self._epd, "sleep"):
-            self._epd.sleep()
+        try:
+            if self._epd is not None and hasattr(self._epd, "sleep"):
+                self._epd.sleep()
+        finally:
+            self._release_gpio_resources()
+            self._epd = None
+            self._supports_partial_update = False
 
     def wake(self) -> None:
         if self._epd is None:
@@ -166,3 +170,35 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
 
     def _has_partial_update_support(self) -> bool:
         return self._resolve_partial_method() is not None
+
+    def _release_gpio_resources(self) -> None:
+        self._cleanup_gpiozero_pin_factory()
+        self._cleanup_rpi_gpio()
+
+    def _cleanup_gpiozero_pin_factory(self) -> None:
+        try:
+            gpiozero_module = importlib.import_module("gpiozero")
+            device_class = getattr(gpiozero_module, "Device", None)
+            if device_class is None:
+                return
+            pin_factory = getattr(device_class, "pin_factory", None)
+            if pin_factory is not None and hasattr(pin_factory, "close"):
+                pin_factory.close()
+                setattr(device_class, "pin_factory", None)
+        except Exception:
+            logger.debug("Unable to close gpiozero pin factory during display cleanup.", exc_info=True)
+
+    def _cleanup_rpi_gpio(self) -> None:
+        try:
+            gpio_module = importlib.import_module("RPi.GPIO")
+            pins = sorted(
+                {
+                    self._settings.display_gpio_busy_pin,
+                    self._settings.display_gpio_rst_pin,
+                    self._settings.display_gpio_dc_pin,
+                    self._settings.display_gpio_cs_pin,
+                }
+            )
+            gpio_module.cleanup(pins)
+        except Exception:
+            logger.debug("Unable to cleanup RPi.GPIO pins during display cleanup.", exc_info=True)

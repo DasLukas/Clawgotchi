@@ -4,6 +4,8 @@ import argparse
 import importlib.util
 import logging
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import time
 from typing import Any
@@ -15,6 +17,21 @@ from app.infrastructure.display.dummy import DummyDisplayDriver
 from config.settings import DisplaySettings
 
 logger = logging.getLogger(__name__)
+
+
+def _service_is_active(service_name: str) -> bool:
+    if shutil.which("systemctl") is None:
+        return False
+    try:
+        completed = subprocess.run(
+            ["systemctl", "is-active", service_name],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0 and completed.stdout.strip() == "active"
 
 
 def _load_waveshare_driver_type():
@@ -83,10 +100,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rst-pin", type=int, default=17)
     parser.add_argument("--busy-pin", type=int, default=24)
     parser.add_argument("--cs-pin", type=int, default=8)
+    parser.add_argument("--force", action="store_true", help="Run even if clawgotchi.service is currently active.")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     logger.info("Starting display test.", extra={"backend": args.backend, "frames": args.frames})
+
+    if args.backend == "waveshare_epaper_27bw" and not args.force and _service_is_active("clawgotchi.service"):
+        logger.error(
+            "clawgotchi.service is active and may hold GPIO resources. "
+            "Stop the service first or re-run with --force."
+        )
+        return 2
 
     driver = _build_driver(args)
     driver.init()

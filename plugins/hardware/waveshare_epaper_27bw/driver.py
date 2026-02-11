@@ -32,6 +32,8 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         if self._epd is not None:
             return
 
+        self._release_gpio_resources()
+
         spi_result = self._spi_manager.ensure_spi_ready()
         logger.info(
             "SPI setup check finished for Waveshare display.",
@@ -79,16 +81,16 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         )
 
     def sleep(self) -> None:
-        if self._epd is None:
-            return
-        if hasattr(self._epd, "sleep"):
-            self._epd.sleep()
+        try:
+            if self._epd is not None and hasattr(self._epd, "sleep"):
+                self._epd.sleep()
+        finally:
+            self._release_gpio_resources()
+            self._epd = None
+            self._supports_partial_update = False
 
     def wake(self) -> None:
-        if self._epd is None:
-            self.init()
-            return
-        self._epd.init()
+        self.init()
 
     def clear(self) -> None:
         if self._epd is None:
@@ -267,12 +269,50 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                         )
                         return module
             except Exception as exc:
-                import_errors.append(f"epaper.epaper({model_name}): {exc}")
+                detail = str(exc)
+                if "Failed to add edge detection" in detail:
+                    detail = (
+                        f"{detail} (BUSY pin is likely in use by another process. "
+                        "Stop other display processes and retry.)"
+                    )
+                import_errors.append(f"epaper.epaper({model_name}): {detail}")
                 logger.debug(
                     "Failed to load model from epaper package compatibility API.",
                     extra={"model_name": model_name, "error": str(exc)},
                 )
         return None
+
+    def _release_gpio_resources(self) -> None:
+        self._cleanup_gpiozero_pin_factory()
+        self._cleanup_rpi_gpio()
+
+    def _cleanup_gpiozero_pin_factory(self) -> None:
+        try:
+            gpiozero_module = importlib.import_module("gpiozero")
+            device_class = getattr(gpiozero_module, "Device", None)
+            if device_class is None:
+                return
+            pin_factory = getattr(device_class, "pin_factory", None)
+            if pin_factory is not None and hasattr(pin_factory, "close"):
+                pin_factory.close()
+                setattr(device_class, "pin_factory", None)
+        except Exception:
+            logger.debug("Unable to close gpiozero pin factory during display cleanup.", exc_info=True)
+
+    def _cleanup_rpi_gpio(self) -> None:
+        try:
+            gpio_module = importlib.import_module("RPi.GPIO")
+            pins = sorted(
+                {
+                    self._settings.display_gpio_busy_pin,
+                    self._settings.display_gpio_rst_pin,
+                    self._settings.display_gpio_dc_pin,
+                    self._settings.display_gpio_cs_pin,
+                }
+            )
+            gpio_module.cleanup(pins)
+        except Exception:
+            logger.debug("Unable to cleanup RPi.GPIO pins during display cleanup.", exc_info=True)
 
     def _build_install_hint(self) -> str:
         python_executable = sys.executable or "python"
