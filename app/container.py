@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+import time
 from typing import Any
 
 from PIL import Image, ImageDraw
 
+from app.application.hardware_aliases import normalize_hardware_profile_id, normalize_plugin_id
 from app.application.ports.display import DisplayDriver, Frame
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
@@ -35,6 +37,7 @@ from app.infrastructure.repositories import (
 )
 from app.infrastructure.theme_loader import FileSystemThemeLoader
 from app.infrastructure.themes.theme_loader import ThemeLoader
+from app.domain.models.pet_state import PetState
 from config.settings import DisplaySettings
 
 logger = logging.getLogger(__name__)
@@ -166,6 +169,7 @@ class ApplicationContainer:
 
         themes = self.theme_service.list_themes()
         state = self.state_repository.load_or_create(self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
+        state = self._migrate_legacy_state_ids(state)
         available_theme_ids = {theme["theme_id"] for theme in themes}
         if themes and state.active_theme_id not in available_theme_ids:
             state.active_theme_id = themes[0]["theme_id"]
@@ -179,8 +183,21 @@ class ApplicationContainer:
         if themes and state.active_theme_id in available_theme_ids:
             self.theme_repository.activate(state.active_theme_id)
 
+        if state.hardware_profile != "dummy":
+            try:
+                await self.plugin_service.activate_hardware_profile(state.hardware_profile)
+                state = self.state_repository.load_or_create(
+                    self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
+                )
+            except ValueError:
+                logger.warning(
+                    "Stored hardware profile could not be activated during startup.",
+                    extra={"hardware_profile": state.hardware_profile},
+                )
+
         self.refresh_display_driver(profile_id=state.hardware_profile)
         self.render_service.set_theme(state.active_theme_id)
+        self._render_current_pet_frame()
 
         self._tasks = [
             asyncio.create_task(self.command_worker.run(), name="command-worker"),
@@ -201,10 +218,13 @@ class ApplicationContainer:
         await self.plugin_runtime.shutdown()
 
     def refresh_display_driver(self, profile_id: str) -> dict[str, Any]:
-        normalized = profile_id.strip() or "dummy"
+        normalized = normalize_hardware_profile_id(profile_id, default="dummy")
+        if profile_id.strip() and normalized != profile_id.strip():
+            self._persist_hardware_profile_alias(normalized)
 
         if normalized == "dummy":
             self._switch_display_driver(self._create_dummy_driver())
+            self._render_current_pet_frame()
             status = self._record_hardware_status(
                 ok=True,
                 backend="dummy",
@@ -217,6 +237,7 @@ class ApplicationContainer:
             try:
                 self._switch_display_driver(plugin_driver)
                 self._render_hardware_test_pattern(driver=plugin_driver, backend_label=normalized)
+                self._render_current_pet_frame()
                 status = self._record_hardware_status(
                     ok=True,
                     backend=normalized,
@@ -226,6 +247,7 @@ class ApplicationContainer:
             except Exception as exc:
                 logger.exception("Plugin display driver failed to initialize.", extra={"profile_id": normalized})
                 self._switch_display_driver(self._create_dummy_driver())
+                self._render_current_pet_frame()
                 detail = str(exc).strip()
                 error_message = (
                     f"Hardware backend failed. Falling back to dummy display. Details: {detail}"
@@ -241,6 +263,7 @@ class ApplicationContainer:
 
         logger.warning("Hardware profile not provided by any enabled plugin. Falling back to dummy driver.", extra={"profile_id": normalized})
         self._switch_display_driver(self._create_dummy_driver())
+        self._render_current_pet_frame()
         status = self._record_hardware_status(
             ok=False,
             backend=normalized,
@@ -309,3 +332,57 @@ class ApplicationContainer:
         }
         self._hardware_status = status
         return status
+
+    def _persist_hardware_profile_alias(self, normalized_profile: str) -> None:
+        pet_name = self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
+        state = self.state_repository.load_or_create(pet_name)
+        if state.hardware_profile != normalized_profile:
+            state.hardware_profile = normalized_profile
+            self.state_repository.save_state(
+                state=state,
+                source="legacy_hardware_profile_migrated",
+                command_id=None,
+                events=[],
+            )
+        self.settings_repository.set("setup.hardware_profile", normalized_profile)
+
+    def _migrate_legacy_state_ids(self, state: Any) -> Any:
+        available_plugin_ids = {plugin["plugin_id"] for plugin in self.plugin_repository.list_plugins()}
+        normalized_plugins = [
+            normalize_plugin_id(plugin_id)
+            for plugin_id in state.enabled_plugin_ids
+            if normalize_plugin_id(plugin_id) in available_plugin_ids
+        ]
+        normalized_plugins = sorted(value for value in set(normalized_plugins) if value)
+        normalized_profile = normalize_hardware_profile_id(state.hardware_profile, default="dummy")
+
+        if normalized_plugins == state.enabled_plugin_ids and normalized_profile == state.hardware_profile:
+            return state
+
+        state.enabled_plugin_ids = normalized_plugins
+        state.hardware_profile = normalized_profile
+        self.state_repository.save_state(
+            state=state,
+            source="legacy_plugin_alias_migrated",
+            command_id=None,
+            events=[],
+        )
+        self.settings_repository.set("setup.hardware_profile", normalized_profile)
+        return state
+
+    def _render_current_pet_frame(self) -> None:
+        try:
+            pet_name = self.settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
+            state = self.state_repository.load_or_create(pet_name)
+            now_ts = time.time()
+            pet_state = PetState.from_dict(
+                state.pet_state.to_dict(),
+                fallback_name=state.pet.name,
+                fallback_emotion=state.pet.emotion.value,
+            )
+            pet_state.ensure_idle_if_expired(now_ts)
+            self.render_service.set_theme(state.active_theme_id)
+            image = self.render_service.render_frame(pet_state, now_ts=now_ts)
+            self.render_service.push_frame(image)
+        except Exception:
+            logger.exception("Failed to render current pet frame after display backend change.")

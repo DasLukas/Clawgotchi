@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -19,6 +20,7 @@ UPDATE_SCRIPT_PATH = Path(os.getenv("CLWG_UPDATE_SCRIPT", str(PROJECT_ROOT / "up
 templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
 
 router = APIRouter(tags=["web"])
+logger = logging.getLogger(__name__)
 
 
 def _settings_context(container, update_result: dict | None = None, hardware_result: dict | None = None) -> dict:
@@ -141,7 +143,10 @@ async def plugins_rescan(container=Depends(get_container)) -> RedirectResponse:
 
 @router.post("/plugins/{plugin_id}/enable")
 async def plugins_enable(plugin_id: str, container=Depends(get_container)) -> RedirectResponse:
-    await container.plugin_service.enable(plugin_id)
+    try:
+        await container.plugin_service.enable(plugin_id)
+    except Exception:
+        logger.exception("Requested plugin could not be enabled.", extra={"plugin_id": plugin_id})
     current_state = container.status_service.get_status()["state"]
     container.refresh_display_driver(profile_id=current_state.get("hardware_profile", "dummy"))
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
@@ -149,7 +154,10 @@ async def plugins_enable(plugin_id: str, container=Depends(get_container)) -> Re
 
 @router.post("/plugins/{plugin_id}/disable")
 async def plugins_disable(plugin_id: str, container=Depends(get_container)) -> RedirectResponse:
-    await container.plugin_service.disable(plugin_id)
+    try:
+        await container.plugin_service.disable(plugin_id)
+    except Exception:
+        logger.exception("Requested plugin could not be disabled.", extra={"plugin_id": plugin_id})
     current_state = container.status_service.get_status()["state"]
     container.refresh_display_driver(profile_id=current_state.get("hardware_profile", "dummy"))
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
@@ -160,7 +168,10 @@ async def plugins_set_hardware_profile(
     container=Depends(get_container),
     hardware_profile: str = Form(...),
 ) -> RedirectResponse:
-    await container.plugin_service.activate_hardware_profile(hardware_profile)
+    try:
+        await container.plugin_service.activate_hardware_profile(hardware_profile)
+    except Exception:
+        logger.exception("Requested hardware profile could not be activated.", extra={"hardware_profile": hardware_profile})
     container.refresh_display_driver(profile_id=hardware_profile)
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
 

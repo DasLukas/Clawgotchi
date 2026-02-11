@@ -68,6 +68,9 @@ class _Runtime:
     async def activate(self, plugin_id: str) -> None:
         return None
 
+    async def deactivate(self, plugin_id: str) -> None:
+        return None
+
 
 class _PluginRepositoryForActivation:
     def __init__(self) -> None:
@@ -112,3 +115,39 @@ def test_activate_hardware_profile_enables_provider_plugin() -> None:
 
     assert plugin_repository.list_plugins()[0]["enabled"] is True
     assert state_repository.state.hardware_profile == "waveshare_epaper_27bw"
+
+
+def test_activate_hardware_profile_maps_legacy_profile_id() -> None:
+    plugin_repository = _PluginRepositoryForActivation()
+    state_repository = _StateRepository()
+    settings_repository = _SettingsRepository()
+    service = PluginService(
+        plugin_loader=object(),
+        plugin_repository=plugin_repository,
+        state_repository=state_repository,
+        plugin_runtime=_Runtime(),
+        settings_repository=settings_repository,
+    )
+
+    asyncio.run(service.activate_hardware_profile("waveshare_2in7"))
+
+    assert plugin_repository.list_plugins()[0]["enabled"] is True
+    assert state_repository.state.hardware_profile == "waveshare_epaper_27bw"
+
+
+def test_enable_maps_legacy_plugin_id() -> None:
+    plugin_repository = _PluginRepositoryForActivation()
+    state_repository = _StateRepository()
+    settings_repository = _SettingsRepository()
+    service = PluginService(
+        plugin_loader=object(),
+        plugin_repository=plugin_repository,
+        state_repository=state_repository,
+        plugin_runtime=_Runtime(),
+        settings_repository=settings_repository,
+    )
+
+    asyncio.run(service.enable("waveshare_2in7_display"))
+
+    assert plugin_repository.list_plugins()[0]["enabled"] is True
+    assert state_repository.state.enabled_plugin_ids == ["waveshare_epaper_27bw"]
