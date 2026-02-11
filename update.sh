@@ -96,6 +96,13 @@ is_reboot_marker_present() {
   [[ -f "/run/reboot-required" || -f "/var/run/reboot-required" ]]
 }
 
+service_exists() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 1
+  fi
+  systemctl show --property=Id --value "${SERVICE_NAME}" >/dev/null 2>&1
+}
+
 if [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
   die "No Git repository found at ${PROJECT_ROOT}."
 fi
@@ -132,7 +139,7 @@ log "Installing/updating Python dependencies."
 run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"
 run_as_app "'${VENV_PYTHON}' -m pip install -e '${PROJECT_ROOT}'"
 
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q "^${SERVICE_NAME}"; then
+if service_exists; then
   if [[ "${EUID}" -eq 0 ]]; then
     log "Restarting service ${SERVICE_NAME}."
     systemctl restart "${SERVICE_NAME}"
@@ -141,7 +148,7 @@ if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q "
     log "To restart manually: sudo systemctl restart ${SERVICE_NAME}"
   fi
 else
-  log "No systemd service '${SERVICE_NAME}' found, skipping restart."
+  log "No systemd service '${SERVICE_NAME}' found or systemctl unavailable, skipping restart."
 fi
 
 if [[ "${had_reboot_marker_before}" == "false" ]] && is_reboot_marker_present; then
