@@ -9,7 +9,7 @@ Clawgotchi ist ein erweiterbares Raspberry-Pi-Projekt mit FastAPI-Weboberflaeche
 - Setup-Wizard, Dashboard, Themes und Plugins
 - SQLite-Statuspersistenz mit Snapshots
 - Hintergrund-Worker fuer Tick-Loop und Command-Queue
-- Dummy-Hardwaretreiber (Display/Input)
+- Hardware display backends via plugins (Dummy + Waveshare ePaper 2.7" B/W)
 
 ## Voraussetzungen
 
@@ -236,6 +236,43 @@ sudo systemctl status clawgotchi.service
 sudo systemctl status clawgotchi-update.timer
 ```
 
+## Waveshare ePaper Plugin (2.7" B/W)
+
+This project integrates the physical display as a plugin:
+
+- Plugin path: `plugins/hardware/waveshare_epaper_27bw`
+- Backend id: `waveshare_epaper_27bw`
+- Resolution: `264x176`, 1-bit black/white
+
+### Enable from Web UI
+
+1. Open `Settings`.
+2. In `Hardware`, select `Waveshare 2.7" ePaper HAT`.
+3. Click `Apply hardware backend`.
+
+What happens automatically:
+
+- Raspberry Pi detection
+- SPI check (`/dev/spidev0.0` or boot config)
+- SPI enable attempt via `raspi-config nonint do_spi 0`
+- Fallback boot-config patch (`dtparam=spi=on`) when needed
+- Driver initialization and two short test frames (`Clawgotchi ready`)
+
+### One-time sudoers rule (required if app runs as non-root and sudo -n is blocked)
+
+```bash
+sudo tee /etc/sudoers.d/clawgotchi-hw >/dev/null <<'EOF'
+clawgotchi ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt
+EOF
+sudo chmod 0440 /etc/sudoers.d/clawgotchi-hw
+```
+
+### CLI display test
+
+```bash
+python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw
+```
+
 ## Updating
 
 Automatisches Update:
@@ -286,7 +323,7 @@ Update ueber Webinterface:
 
 - `.env` mit Prefix `CLAW_` (siehe `.env.example`)
 - `config/defaults.toml` als Standardkonfiguration
-- Typische Werte: `CLAW_HOST`, `CLAW_PORT`, `CLAW_DATABASE_URL`, `CLAW_PLUGIN_DIRECTORY`, `CLAW_THEME_DIRECTORY`
+- Typische Werte: `CLAW_HOST`, `CLAW_PORT`, `CLAW_DATABASE_URL`, `CLAW_PLUGIN_DIRECTORY`, `CLAW_THEME_DIRECTORY`, `CLAW_DISPLAY_SPI_BUS`, `CLAW_DISPLAY_SPI_DEVICE`, `CLAW_DISPLAY_GPIO_DC_PIN`, `CLAW_DISPLAY_GPIO_RST_PIN`, `CLAW_DISPLAY_GPIO_BUSY_PIN`, `CLAW_DISPLAY_GPIO_CS_PIN`
 
 ## Betrieb und Verifikation
 
@@ -311,34 +348,54 @@ REST-Weboberflaeche:
 
 ## Troubleshooting
 
-### `Permission denied (publickey)`
+### `Permission denied: /dev/spidev0.0`
 
-- Deploy Key ist nicht im Repository hinterlegt oder falsches Repository.
-- Pruefen, ob der richtige Public Key in den Deploy Keys liegt (read-only reicht).
-- SSH-Test:
+- Verify that SPI is enabled and the device node exists:
 
 ```bash
-sudo -u clawgotchi ssh -T git@github.com
+ls -l /dev/spidev0.0
 ```
 
-### `Host key verification failed`
+- Make sure the `clawgotchi` user can access the SPI device group on your OS image.
+- If backend activation reports a privilege error, add the one-time sudoers snippet from the `Waveshare ePaper Plugin` section.
 
-- Host-Key fehlt oder ist veraltet.
-- Erneut per `ssh-keyscan` eintragen:
+### SPI not enabled automatically
+
+- Run:
 
 ```bash
-sudo ssh-keyscan -H github.com | sudo tee -a /home/clawgotchi/.ssh/known_hosts >/dev/null
-sudo chown clawgotchi:clawgotchi /home/clawgotchi/.ssh/known_hosts
-sudo chmod 600 /home/clawgotchi/.ssh/known_hosts
+sudo raspi-config nonint do_spi 0
 ```
 
-### Service startet nicht
+- Confirm one of these contains `dtparam=spi=on`:
+  - `/boot/config.txt`
+  - `/boot/firmware/config.txt`
+- Reboot after changing boot config:
 
-- Letzte Fehlerdetails lesen:
+```bash
+sudo reboot
+```
+
+### BUSY pin stuck or wrong display model
+
+- Symptoms:
+  - refresh never completes
+  - initialization fails repeatedly
+  - ghosting/no visible frame updates
+- Check wiring (BCM defaults expected by this plugin):
+  - `DC=25`
+  - `RST=17`
+  - `BUSY=24`
+  - `CS=8`
+- Ensure the panel model is Waveshare 2.7" B/W (264x176). Using a different panel with this backend will fail.
+
+### Service does not start
+
+- Read recent service logs:
 
 ```bash
 journalctl -u clawgotchi -n 100 --no-pager
 sudo systemctl status clawgotchi.service
 ```
 
-- Hauefige Ursachen: fehlgeschlagenes `pip install -e .`, falsche Dateirechte unter `/opt/clawgotchi`, Python-Umgebung beschaedigt.
+- Common causes: failed `pip install -e .`, incorrect permissions under `/opt/clawgotchi`, broken Python venv.

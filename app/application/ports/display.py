@@ -34,6 +34,10 @@ class DisplayDriver(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def clear(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_capabilities(self) -> DisplayCapabilities:
         raise NotImplementedError
 

@@ -21,6 +21,19 @@ templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
 router = APIRouter(tags=["web"])
 
 
+def _settings_context(container, update_result: dict | None = None, hardware_result: dict | None = None) -> dict:
+    current_profile = container.status_service.get_status()["state"].get("hardware_profile", "dummy")
+    return {
+        "app_name": container.config.app_name,
+        "update_script_path": str(UPDATE_SCRIPT_PATH),
+        "update_result": update_result,
+        "hardware_profiles": container.plugin_service.list_hardware_profiles(),
+        "current_hardware_profile": current_profile,
+        "hardware_result": hardware_result,
+        "hardware_status": container.get_hardware_status(),
+    }
+
+
 @router.get("/")
 async def root(container=Depends(get_container)) -> RedirectResponse:
     if container.initialize_device_service.is_completed():
@@ -147,7 +160,7 @@ async def plugins_set_hardware_profile(
     container=Depends(get_container),
     hardware_profile: str = Form(...),
 ) -> RedirectResponse:
-    container.plugin_service.set_hardware_profile(hardware_profile)
+    await container.plugin_service.activate_hardware_profile(hardware_profile)
     container.refresh_display_driver(profile_id=hardware_profile)
     return RedirectResponse(url="/plugins", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -182,11 +195,45 @@ async def settings_page(request: Request, container=Depends(get_container)):
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
-        context={
-            "app_name": container.config.app_name,
-            "update_script_path": str(UPDATE_SCRIPT_PATH),
-            "update_result": None,
-        },
+        context=_settings_context(container=container),
+    )
+
+
+@router.post("/settings/hardware")
+async def settings_hardware_update(
+    request: Request,
+    container=Depends(get_container),
+    hardware_profile: str = Form(...),
+):
+    hardware_result: dict
+    try:
+        await container.plugin_service.activate_hardware_profile(hardware_profile)
+        status_payload = container.refresh_display_driver(profile_id=hardware_profile)
+        message = str(status_payload.get("message", "Hardware backend update completed."))
+        has_multiline_details = "\n" in message
+        hardware_result = {
+            "ok": status_payload.get("ok", False),
+            "summary": (
+                "Hardware backend update failed."
+                if has_multiline_details and not status_payload.get("ok", False)
+                else message
+            ),
+            "details": message if has_multiline_details else "",
+        }
+    except Exception as exc:
+        hardware_result = {
+            "ok": False,
+            "summary": "Hardware backend update failed.",
+            "details": str(exc),
+        }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context=_settings_context(
+            container=container,
+            hardware_result=hardware_result,
+        ),
     )
 
 
@@ -195,14 +242,14 @@ async def settings_update(request: Request, container=Depends(get_container)):
     if not UPDATE_SCRIPT_PATH.exists():
         result = {
             "ok": False,
-            "summary": f"Update script wurde nicht gefunden: {UPDATE_SCRIPT_PATH}",
+            "summary": f"Update script was not found: {UPDATE_SCRIPT_PATH}",
             "stdout": "",
             "stderr": "",
         }
     elif not os.access(UPDATE_SCRIPT_PATH, os.X_OK):
         result = {
             "ok": False,
-            "summary": f"Update script ist nicht ausfuehrbar: {UPDATE_SCRIPT_PATH}",
+            "summary": f"Update script is not executable: {UPDATE_SCRIPT_PATH}",
             "stdout": "",
             "stderr": "",
         }
@@ -219,9 +266,9 @@ async def settings_update(request: Request, container=Depends(get_container)):
             result = {
                 "ok": completed.returncode == 0,
                 "summary": (
-                    "Update erfolgreich abgeschlossen."
+                    "Update finished successfully."
                     if completed.returncode == 0
-                    else f"Update fehlgeschlagen (exit={completed.returncode})."
+                    else f"Update failed (exit={completed.returncode})."
                 ),
                 "stdout": completed.stdout.strip(),
                 "stderr": completed.stderr.strip(),
@@ -229,7 +276,7 @@ async def settings_update(request: Request, container=Depends(get_container)):
         except subprocess.TimeoutExpired:
             result = {
                 "ok": False,
-                "summary": "Update wurde nach 600 Sekunden abgebrochen (Timeout).",
+                "summary": "Update timed out after 600 seconds.",
                 "stdout": "",
                 "stderr": "",
             }
@@ -237,11 +284,10 @@ async def settings_update(request: Request, container=Depends(get_container)):
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
-        context={
-            "app_name": container.config.app_name,
-            "update_script_path": str(UPDATE_SCRIPT_PATH),
-            "update_result": result,
-        },
+        context=_settings_context(
+            container=container,
+            update_result=result,
+        ),
     )
 
 

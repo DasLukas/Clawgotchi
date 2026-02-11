@@ -137,6 +137,12 @@ class SqlAlchemyPluginRepository:
     def upsert_manifests(self, manifests: list[PluginManifest]) -> None:
         now = utc_now()
         with self._session_factory.begin() as session:
+            known_ids = {manifest.plugin_id for manifest in manifests}
+            existing_rows = session.execute(select(PluginModel)).scalars().all()
+            for row in existing_rows:
+                if row.plugin_id not in known_ids:
+                    session.delete(row)
+
             for manifest in manifests:
                 model = session.get(PluginModel, manifest.plugin_id)
                 if model is None:

@@ -3,17 +3,43 @@
 {% block content %}
 <section class="card stack">
   <h2>Settings</h2>
-  <p>Hier kann ein Projekt-Update direkt ueber das Webinterface gestartet werden.</p>
-  <p><strong>Update-Skript:</strong> <code>{{ update_script_path }}</code></p>
+  <h3>Hardware</h3>
+  <p>Select the active display backend for this device.</p>
+  <form method="post" action="/settings/hardware" class="stack">
+    <label>
+      Display backend
+      <select name="hardware_profile">
+        {% for profile in hardware_profiles %}
+          <option value="{{ profile.id }}" {% if profile.id == current_hardware_profile %}selected{% endif %}>{{ profile.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Apply hardware backend</button>
+  </form>
 
+  {% if hardware_result %}
+  <p class="status {{ 'status-success' if hardware_result.ok else 'status-error' }}">{{ hardware_result.summary }}</p>
+  {% if hardware_result.details %}
+  <pre class="log-output">{{ hardware_result.details }}</pre>
+  {% endif %}
+  {% endif %}
+
+  {% if hardware_status %}
+  <p><strong>Current backend:</strong> {{ hardware_status.backend }}</p>
+  <p class="status {{ 'status-success' if hardware_status.ok else 'status-error' }}">{{ hardware_status.message }}</p>
+  {% endif %}
+
+  <h3>Software Update</h3>
+  <p>Run the project update script from the web interface.</p>
+  <p><strong>Update script:</strong> <code>{{ update_script_path }}</code></p>
   <form method="post" action="/settings/update">
-    <button type="submit">Jetzt updaten</button>
+    <button type="submit">Run update now</button>
   </form>
 </section>
 
 {% if update_result %}
 <section class="card stack">
-  <h2>Update Ergebnis</h2>
+  <h2>Update Result</h2>
   <p class="status {{ 'status-success' if update_result.ok else 'status-error' }}">{{ update_result.summary }}</p>
 
   {% if update_result.stdout %}

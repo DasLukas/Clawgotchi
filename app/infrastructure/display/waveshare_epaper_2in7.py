@@ -50,6 +50,9 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
             return
         self._epd.init()
 
+    def clear(self) -> None:
+        self._clear_display()
+
     def get_capabilities(self) -> DisplayCapabilities:
         return DisplayCapabilities(
             width=264,

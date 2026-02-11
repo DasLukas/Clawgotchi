@@ -45,6 +45,10 @@ class DummyDisplayDriver(DisplayDriver):
             self.init()
         self._asleep = False
 
+    def clear(self) -> None:
+        blank = Image.new("1", (self._capabilities.width, self._capabilities.height), color=1)
+        self.render(Frame(image=blank))
+
     def get_capabilities(self) -> DisplayCapabilities:
         return self._capabilities
 

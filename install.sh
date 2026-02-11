@@ -328,6 +328,20 @@ enable_spi_noninteractive() {
   ensure_spi_enabled_in_config
 }
 
+write_hardware_sudoers_policy() {
+  local sudoers_file="/etc/sudoers.d/clawgotchi-hw"
+  local sudoers_line="${SELECTED_USER} ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt"
+
+  if [[ "${DRYRUN}" == "1" ]]; then
+    log "DRYRUN: write hardware sudoers policy to ${sudoers_file}"
+    return 0
+  fi
+
+  printf "%s\n" "${sudoers_line}" >"${sudoers_file}"
+  chmod 0440 "${sudoers_file}"
+  log "Wrote hardware helper sudoers policy: ${sudoers_file}"
+}
+
 print_ssh_guidance() {
   log "SSH is optional and was not changed automatically."
   log "To enable SSH manually:"
@@ -691,6 +705,7 @@ main() {
   install_packages
   setup_unattended_upgrades
   enable_spi_noninteractive
+  write_hardware_sudoers_policy
   print_ssh_guidance
 
   setup_ssh_for_git_user

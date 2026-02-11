@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
+from typing import Any
 
-from app.application.ports.display import DisplayDriver
+from PIL import Image, ImageDraw
+
+from app.application.ports.display import DisplayDriver, Frame
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
     CommandHandlerService,
@@ -20,7 +24,6 @@ from app.application.services import (
 from app.config import ConfigResolver, RuntimeConfig
 from app.infrastructure.database import Database
 from app.infrastructure.display.dummy import DummyDisplayDriver
-from app.infrastructure.display.factory import create_display_driver
 from app.infrastructure.hardware import DummyAudioDriver, DummyInputDriver, DummySensorDriver
 from app.infrastructure.logging import configure_logging
 from app.infrastructure.plugin_loader import FileSystemPluginLoader
@@ -60,6 +63,13 @@ class ApplicationContainer:
             display_dithering=self.config.display_dithering,
             display_debug_write_png=self.config.display_debug_write_png,
             display_debug_png_path=self.config.display_debug_png_path,
+            display_spi_bus=self.config.display_spi_bus,
+            display_spi_device=self.config.display_spi_device,
+            display_spi_max_hz=self.config.display_spi_max_hz,
+            display_gpio_dc_pin=self.config.display_gpio_dc_pin,
+            display_gpio_rst_pin=self.config.display_gpio_rst_pin,
+            display_gpio_busy_pin=self.config.display_gpio_busy_pin,
+            display_gpio_cs_pin=self.config.display_gpio_cs_pin,
         )
 
         self.state_repository = SqlAlchemyStateRepository(self.database.session_factory)
@@ -139,6 +149,12 @@ class ApplicationContainer:
         self.command_worker = CommandWorker(self.command_queue, self.command_handler_service, self.stop_event)
         self.tick_worker = TickWorker(self.tick_loop_service, self.config.tick_interval_seconds, self.stop_event)
         self._tasks: list[asyncio.Task] = []
+        self._hardware_status: dict[str, Any] = {
+            "ok": True,
+            "backend": "dummy",
+            "message": "Dummy display backend is active.",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def _ensure_directories(self) -> None:
         self.config.plugin_directory.mkdir(parents=True, exist_ok=True)
@@ -184,32 +200,61 @@ class ApplicationContainer:
 
         await self.plugin_runtime.shutdown()
 
-    def refresh_display_driver(self, profile_id: str) -> None:
+    def refresh_display_driver(self, profile_id: str) -> dict[str, Any]:
         normalized = profile_id.strip() or "dummy"
 
         if normalized == "dummy":
             self._switch_display_driver(self._create_dummy_driver())
-            return
+            status = self._record_hardware_status(
+                ok=True,
+                backend="dummy",
+                message="Dummy display backend is active.",
+            )
+            return status
 
         plugin_driver = self.plugin_runtime.create_display_driver(normalized, self.display_settings)
         if plugin_driver is not None:
             try:
                 self._switch_display_driver(plugin_driver)
-                return
-            except Exception:
+                self._render_hardware_test_pattern(driver=plugin_driver, backend_label=normalized)
+                status = self._record_hardware_status(
+                    ok=True,
+                    backend=normalized,
+                    message="Hardware backend initialized successfully.",
+                )
+                return status
+            except Exception as exc:
                 logger.exception("Plugin display driver failed to initialize.", extra={"profile_id": normalized})
                 self._switch_display_driver(self._create_dummy_driver())
-                return
+                detail = str(exc).strip()
+                error_message = (
+                    f"Hardware backend failed. Falling back to dummy display. Details: {detail}"
+                    if detail
+                    else "Hardware backend failed. Falling back to dummy display."
+                )
+                status = self._record_hardware_status(
+                    ok=False,
+                    backend=normalized,
+                    message=error_message,
+                )
+                return status
 
         logger.warning("Hardware profile not provided by any enabled plugin. Falling back to dummy driver.", extra={"profile_id": normalized})
         self._switch_display_driver(self._create_dummy_driver())
+        status = self._record_hardware_status(
+            ok=False,
+            backend=normalized,
+            message="Requested hardware backend is unavailable. Dummy display is active.",
+        )
+        return status
+
+    def get_hardware_status(self) -> dict[str, Any]:
+        return dict(self._hardware_status)
 
     def _create_base_display_driver(self) -> DisplayDriver:
-        try:
-            return create_display_driver(self.display_settings)
-        except Exception:
-            logger.exception("Base display driver initialization failed. Falling back to dummy.")
-            return self._create_dummy_driver()
+        dummy = self._create_dummy_driver()
+        dummy.init()
+        return dummy
 
     def _create_dummy_driver(self) -> DisplayDriver:
         dummy = DummyDisplayDriver(
@@ -217,12 +262,50 @@ class ApplicationContainer:
             write_debug_png=self.display_settings.display_debug_write_png,
             debug_png_path=self.display_settings.display_debug_png_path,
         )
-        dummy.init()
         return dummy
 
     def _switch_display_driver(self, driver: DisplayDriver) -> None:
         if driver is self.display_driver:
             return
 
+        try:
+            driver.init()
+        except Exception:
+            logger.exception("Display driver initialization failed before activation.")
+            raise
+
+        try:
+            self.display_driver.sleep()
+        except Exception:
+            logger.debug("Current display driver did not sleep cleanly.", exc_info=True)
+
         self.display_driver = driver
         self.render_service.set_display_driver(driver)
+
+    def _render_hardware_test_pattern(self, driver: DisplayDriver, backend_label: str) -> None:
+        capabilities = driver.get_capabilities()
+        frame_a = Image.new("1", (capabilities.width, capabilities.height), color=1)
+        draw_a = ImageDraw.Draw(frame_a)
+        draw_a.rectangle((0, 0, capabilities.width - 1, capabilities.height - 1), outline=0, width=2)
+        draw_a.text((12, 12), "Clawgotchi ready", fill=0)
+        draw_a.text((12, 36), backend_label, fill=0)
+        draw_a.text((12, 60), "SPI online", fill=0)
+
+        frame_b = Image.new("1", (capabilities.width, capabilities.height), color=1)
+        draw_b = ImageDraw.Draw(frame_b)
+        draw_b.rectangle((0, 0, capabilities.width - 1, capabilities.height - 1), outline=0, width=2)
+        draw_b.text((12, 12), "Clawgotchi ready", fill=0)
+        draw_b.text((12, 36), "Display test frame 2/2", fill=0)
+
+        driver.render(Frame(image=frame_a))
+        driver.render(Frame(image=frame_b))
+
+    def _record_hardware_status(self, ok: bool, backend: str, message: str) -> dict[str, Any]:
+        status = {
+            "ok": ok,
+            "backend": backend,
+            "message": message,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._hardware_status = status
+        return status

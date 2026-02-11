@@ -35,8 +35,13 @@ def test_settings_page_and_update_action(tmp_path: Path, monkeypatch) -> None:
         page_response = client.get("/settings")
         assert page_response.status_code == 200
         assert "Settings" in page_response.text
+        assert "Display backend" in page_response.text
+
+        hardware_response = client.post("/settings/hardware", data={"hardware_profile": "dummy"})
+        assert hardware_response.status_code == 200
+        assert "Dummy display backend is active." in hardware_response.text
 
         update_response = client.post("/settings/update")
         assert update_response.status_code == 200
-        assert "Update erfolgreich abgeschlossen." in update_response.text
+        assert "Update finished successfully." in update_response.text
         assert "ok" in update_response.text

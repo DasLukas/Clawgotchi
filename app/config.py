@@ -27,6 +27,13 @@ class RuntimeConfig:
     display_dithering: bool
     display_debug_write_png: bool
     display_debug_png_path: str
+    display_spi_bus: int
+    display_spi_device: int
+    display_spi_max_hz: int
+    display_gpio_dc_pin: int
+    display_gpio_rst_pin: int
+    display_gpio_busy_pin: int
+    display_gpio_cs_pin: int
 
 
 class EnvironmentSettings(BaseSettings):
@@ -49,6 +56,13 @@ class EnvironmentSettings(BaseSettings):
     display_dithering: bool = False
     display_debug_write_png: bool = True
     display_debug_png_path: str = "/tmp/clawgotchi_last_frame.png"
+    display_spi_bus: int = 0
+    display_spi_device: int = 0
+    display_spi_max_hz: int = 2_000_000
+    display_gpio_dc_pin: int = 25
+    display_gpio_rst_pin: int = 17
+    display_gpio_busy_pin: int = 24
+    display_gpio_cs_pin: int = 8
 
 
 class ConfigResolver:
@@ -75,6 +89,13 @@ class ConfigResolver:
             "display_dithering": False,
             "display_debug_write_png": True,
             "display_debug_png_path": "/tmp/clawgotchi_last_frame.png",
+            "display_spi_bus": 0,
+            "display_spi_device": 0,
+            "display_spi_max_hz": 2_000_000,
+            "display_gpio_dc_pin": 25,
+            "display_gpio_rst_pin": 17,
+            "display_gpio_busy_pin": 24,
+            "display_gpio_cs_pin": 8,
         }
 
         env_values = self._env.model_dump()
@@ -113,6 +134,13 @@ class ConfigResolver:
             display_dithering=self._coerce_bool(merged["display_dithering"]),
             display_debug_write_png=self._coerce_bool(merged["display_debug_write_png"]),
             display_debug_png_path=str(merged["display_debug_png_path"]),
+            display_spi_bus=int(merged["display_spi_bus"]),
+            display_spi_device=int(merged["display_spi_device"]),
+            display_spi_max_hz=int(merged["display_spi_max_hz"]),
+            display_gpio_dc_pin=int(merged["display_gpio_dc_pin"]),
+            display_gpio_rst_pin=int(merged["display_gpio_rst_pin"]),
+            display_gpio_busy_pin=int(merged["display_gpio_busy_pin"]),
+            display_gpio_cs_pin=int(merged["display_gpio_cs_pin"]),
         )
 
     def _load_file_values(self, config_file: Path) -> dict[str, Any]:
@@ -125,7 +153,17 @@ class ConfigResolver:
     def _normalize_types(self, raw_values: dict[str, str]) -> dict[str, Any]:
         normalized: dict[str, Any] = {}
         for key, raw_value in raw_values.items():
-            if key in {"port", "display_rotation"}:
+            if key in {
+                "port",
+                "display_rotation",
+                "display_spi_bus",
+                "display_spi_device",
+                "display_spi_max_hz",
+                "display_gpio_dc_pin",
+                "display_gpio_rst_pin",
+                "display_gpio_busy_pin",
+                "display_gpio_cs_pin",
+            }:
                 normalized[key] = int(raw_value)
             elif key in {"tick_interval_seconds"}:
                 normalized[key] = float(raw_value)

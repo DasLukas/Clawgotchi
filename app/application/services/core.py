@@ -292,6 +292,11 @@ class InitializeDeviceService:
         available_plugins = {item["plugin_id"] for item in self._plugin_repository.list_plugins()}
         selected_plugins = [plugin_id for plugin_id in request.plugin_ids if plugin_id in available_plugins]
 
+        if state.hardware_profile != "dummy":
+            provider = self._find_plugin_for_profile(state.hardware_profile)
+            if provider and provider not in selected_plugins:
+                selected_plugins.append(provider)
+
         for plugin in available_plugins:
             self._plugin_repository.set_enabled(plugin, plugin in selected_plugins)
 
@@ -322,6 +327,17 @@ class InitializeDeviceService:
 
     def is_completed(self) -> bool:
         return (self._settings_repository.get("setup.completed", "false") or "false").lower() == "true"
+
+    def _find_plugin_for_profile(self, profile_id: str) -> str | None:
+        for plugin in self._plugin_repository.list_plugins():
+            plugin_id = str(plugin.get("plugin_id", "")).strip()
+            metadata = plugin.get("manifest", {}).get("metadata", {})
+            for item in metadata.get("hardware_profiles", []):
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("id", "")).strip() == profile_id:
+                    return plugin_id
+        return None
 
 
 class PluginService:
@@ -389,7 +405,7 @@ class PluginService:
         profiles: list[dict[str, str]] = [
             {
                 "id": "dummy",
-                "name": "Dummy (No Hardware)",
+                "name": "Dummy/Mock display",
             }
         ]
         seen_ids = {"dummy"}
@@ -411,22 +427,47 @@ class PluginService:
 
         return profiles
 
+    async def activate_hardware_profile(self, profile_id: str) -> dict[str, Any]:
+        normalized = profile_id.strip() or "dummy"
+        if normalized != "dummy":
+            provider_plugin = self._find_plugin_for_profile(normalized)
+            if provider_plugin is None:
+                raise ValueError(f"Hardware profile '{normalized}' is not provided by any plugin.")
+            plugin_row = self._find_plugin(provider_plugin)
+            if not plugin_row.get("enabled", False):
+                await self.enable(provider_plugin)
+
+        state_version = self.set_hardware_profile(normalized)
+        return {"hardware_profile": normalized, "state_version": state_version}
+
     def set_hardware_profile(self, profile_id: str) -> int:
         normalized = profile_id.strip() or "dummy"
         state = self._state_repository.load_or_create(self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi")
         state.hardware_profile = normalized
-        return self._state_repository.save_state(
+        state_version = self._state_repository.save_state(
             state=state,
             source="hardware_profile_changed",
             command_id=None,
             events=[DomainEvent(event_type="hardware_profile_changed", payload={"hardware_profile": normalized})],
         )
+        self._settings_repository.set("setup.hardware_profile", normalized)
+        return state_version
 
     def _find_plugin(self, plugin_id: str) -> dict[str, Any]:
         for plugin in self._plugin_repository.list_plugins():
             if plugin["plugin_id"] == plugin_id:
                 return plugin
         raise ValueError(f"Plugin '{plugin_id}' was not found.")
+
+    def _find_plugin_for_profile(self, profile_id: str) -> str | None:
+        for plugin in self._plugin_repository.list_plugins():
+            manifest = plugin.get("manifest", {})
+            for item in manifest.get("metadata", {}).get("hardware_profiles", []):
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("id", "")).strip() == profile_id:
+                    return str(plugin.get("plugin_id", "")).strip()
+        return None
 
 
 class ThemeService:

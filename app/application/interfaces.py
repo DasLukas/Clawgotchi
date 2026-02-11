@@ -17,6 +17,7 @@ class PluginManifest:
     description: str
     entrypoint: str
     class_name: str
+    directory: str
     capabilities: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -28,6 +29,7 @@ class PluginManifest:
             "description": self.description,
             "entrypoint": self.entrypoint,
             "class_name": self.class_name,
+            "directory": self.directory,
             "capabilities": list(self.capabilities),
             "metadata": dict(self.metadata),
         }
