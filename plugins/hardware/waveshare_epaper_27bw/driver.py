@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 from pathlib import Path
+import pwd
 import sys
 from typing import Any
 
@@ -57,6 +59,7 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                 f"SPI appears configured but {self._spi_device_path} is missing. Reboot Raspberry Pi and retry."
             )
 
+        self._validate_device_permissions()
         module = self._load_epd_module()
         self._configure_epd_module(module)
         self._epd = module.EPD()
@@ -302,6 +305,8 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
     def _cleanup_rpi_gpio(self) -> None:
         try:
             gpio_module = importlib.import_module("RPi.GPIO")
+            if hasattr(gpio_module, "getmode") and gpio_module.getmode() is None:
+                return
             pins = sorted(
                 {
                     self._settings.display_gpio_busy_pin,
@@ -314,9 +319,37 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         except Exception:
             logger.debug("Unable to cleanup RPi.GPIO pins during display cleanup.", exc_info=True)
 
+    def _validate_device_permissions(self) -> None:
+        required_paths = [
+            (self._spi_device_path, "spi"),
+            (Path("/dev/gpiomem"), "gpio"),
+            (Path("/dev/gpiochip0"), "gpio"),
+        ]
+        blocked: list[tuple[Path, str]] = []
+        for device_path, group_name in required_paths:
+            if device_path.exists() and not os.access(device_path, os.R_OK | os.W_OK):
+                blocked.append((device_path, group_name))
+
+        if not blocked:
+            return
+
+        username = self._current_username()
+        blocked_devices = ", ".join(str(path) for path, _ in blocked)
+        missing_groups = ", ".join(sorted({group for _, group in blocked}))
+        raise PermissionError(
+            f"User '{username}' cannot access {blocked_devices}. "
+            f"Add the user to Linux group(s) [{missing_groups}] and restart clawgotchi.service."
+        )
+
+    def _current_username(self) -> str:
+        try:
+            return pwd.getpwuid(os.geteuid()).pw_name
+        except Exception:
+            return str(os.geteuid())
+
     def _build_install_hint(self) -> str:
         python_executable = sys.executable or "python"
         return (
             "Install dependency with: "
-            f"{python_executable} -m pip install --upgrade waveshare-epaper gpiozero"
+            f"{python_executable} -m pip install --upgrade waveshare-epaper gpiozero lgpio"
         )

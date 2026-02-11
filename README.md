@@ -363,13 +363,19 @@ ls -l /dev/spidev0.0
 
 - Make sure the `clawgotchi` user can access the SPI device group on your OS image.
 - If backend activation reports a privilege error, add the one-time sudoers snippet from the `Waveshare ePaper Plugin` section.
+- Ensure the runtime user is in both hardware groups:
+
+```bash
+sudo usermod -aG spi,gpio clawgotchi
+id clawgotchi
+```
 
 ### `No module named 'epaper'` or `No module named 'waveshare_epd'`
 
 - Install or upgrade the Waveshare packages in the app venv:
 
 ```bash
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper gpiozero
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper gpiozero lgpio
 ```
 
 - Verify import:
@@ -407,12 +413,14 @@ sudo reboot
   - refresh never completes
   - initialization fails repeatedly
   - ghosting/no visible frame updates
+  - `Failed to add edge detection`
 - Check wiring (BCM defaults expected by this plugin):
   - `DC=25`
   - `RST=17`
   - `BUSY=24`
   - `CS=8`
 - Ensure the panel model is Waveshare 2.7" B/W (264x176). Using a different panel with this backend will fail.
+- If `Failed to add edge detection` appears, stop `clawgotchi.service`, verify no other process uses GPIO pins, then retry.
 
 ### Service does not start
 

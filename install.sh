@@ -32,6 +32,7 @@ CLWG_SKIP_SSH_TEST="${CLWG_SKIP_SSH_TEST:-0}"
 SELECTED_USER=""
 SELECTED_GROUP=""
 SELECTED_HOME=""
+HARDWARE_SUPPLEMENTARY_GROUPS=""
 INPUT_FD=0
 
 log() {
@@ -192,6 +193,28 @@ collect_user() {
   fi
 }
 
+ensure_user_hardware_groups() {
+  local required_groups=("gpio" "spi")
+  local configured_groups=()
+
+  for group_name in "${required_groups[@]}"; do
+    if ! getent group "${group_name}" >/dev/null 2>&1; then
+      warn "Linux group '${group_name}' does not exist. Skipping group assignment."
+      continue
+    fi
+
+    configured_groups+=("${group_name}")
+    if id -nG "${SELECTED_USER}" | tr ' ' '\n' | grep -Fxq "${group_name}"; then
+      log "User '${SELECTED_USER}' is already in group '${group_name}'."
+    else
+      log "Adding user '${SELECTED_USER}' to group '${group_name}'."
+      run usermod -aG "${group_name}" "${SELECTED_USER}"
+    fi
+  done
+
+  HARDWARE_SUPPLEMENTARY_GROUPS="${configured_groups[*]}"
+}
+
 collect_git_values() {
   if [[ -z "${CLWG_GIT_SSH_URL}" ]]; then
     while true; do
@@ -261,6 +284,12 @@ install_packages() {
     python3-venv \
     unattended-upgrades \
     apt-listchanges
+
+  if apt-cache show python3-lgpio >/dev/null 2>&1; then
+    run apt-get install -y --no-install-recommends python3-lgpio
+  else
+    warn "Optional package python3-lgpio is not available in apt repositories."
+  fi
 }
 
 setup_unattended_upgrades() {
@@ -551,6 +580,11 @@ EOF
 }
 
 write_main_service() {
+  local supplementary_groups_line=""
+  if [[ -n "${HARDWARE_SUPPLEMENTARY_GROUPS}" ]]; then
+    supplementary_groups_line="SupplementaryGroups=${HARDWARE_SUPPLEMENTARY_GROUPS}"
+  fi
+
   log "Writing systemd service: ${SERVICE_FILE}"
   if [[ "${DRYRUN}" == "1" ]]; then
     log "DRYRUN: write ${SERVICE_FILE}"
@@ -567,6 +601,7 @@ Wants=network-online.target
 Type=simple
 User=${SELECTED_USER}
 Group=${SELECTED_GROUP}
+${supplementary_groups_line}
 WorkingDirectory=${PROJECT_ROOT}
 ExecStart=${VENV_PATH}/bin/python ${PROJECT_ROOT}/main.py
 Restart=on-failure
@@ -682,6 +717,7 @@ main() {
   fi
 
   collect_user
+  ensure_user_hardware_groups
   collect_git_values
   collect_deploy_key_guidance_choice
 
