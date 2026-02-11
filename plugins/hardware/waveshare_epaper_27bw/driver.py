@@ -278,5 +278,5 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         python_executable = sys.executable or "python"
         return (
             "Install dependency with: "
-            f"{python_executable} -m pip install --upgrade waveshare-epaper"
+            f"{python_executable} -m pip install --upgrade waveshare-epaper gpiozero"
         )

@@ -366,13 +366,13 @@ ls -l /dev/spidev0.0
 - Install or upgrade the Waveshare packages in the app venv:
 
 ```bash
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper gpiozero
 ```
 
 - Verify import:
 
 ```bash
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -c "import epaper; print('ok')"
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -c "import epaper, gpiozero; print('ok')"
 ```
 
 - Restart service:
