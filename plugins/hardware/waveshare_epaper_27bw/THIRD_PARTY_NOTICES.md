@@ -10,6 +10,6 @@ This plugin targets the public Waveshare Python driver interface from the `waves
 - Use in this plugin: Indirect runtime dependency of the Waveshare `epaper` compatibility API.
 - Package: `lgpio`
 - Upstream: https://pypi.org/project/lgpio/
-- Use in this plugin: Preferred gpiozero pin backend on Raspberry Pi for stable edge detection.
+- Use in this plugin: Optional gpiozero pin backend on Raspberry Pi when available.
 
 No upstream source files are copied into this repository.

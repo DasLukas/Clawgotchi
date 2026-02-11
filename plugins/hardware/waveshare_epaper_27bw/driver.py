@@ -4,9 +4,11 @@ import importlib
 import logging
 import os
 from pathlib import Path
+import pkgutil
 import pwd
 import sys
 from typing import Any
+import warnings
 
 from PIL import Image
 
@@ -238,27 +240,18 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         return None
 
     def _load_epd_module_from_epaper(self, import_errors: list[str]) -> Any | None:
-        for model_name in ("epd2in7_V2", "epd2in7"):
-            try:
-                module = importlib.import_module(f"epaper.{model_name}")
-                self._epd_module_name = f"epaper.{model_name}"
-                logger.info(
-                    "Loaded Waveshare module from epaper package module path.",
-                    extra={"model_name": model_name},
-                )
-                return module
-            except Exception as exc:
-                import_errors.append(f"epaper.{model_name}: {exc}")
-                logger.debug(
-                    "Failed to load model from epaper package module path.",
-                    extra={"model_name": model_name, "error": str(exc)},
-                )
-
         try:
             epaper_package = importlib.import_module("epaper")
         except Exception as exc:
             import_errors.append(f"epaper: {exc}")
             return None
+
+        discovered_module = self._load_module_from_epaper_discovery(
+            epaper_package=epaper_package,
+            import_errors=import_errors,
+        )
+        if discovered_module is not None:
+            return discovered_module
 
         for model_name in ("epd2in7_V2", "epd2in7"):
             try:
@@ -281,9 +274,76 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                 import_errors.append(f"epaper.epaper({model_name}): {detail}")
                 logger.debug(
                     "Failed to load model from epaper package compatibility API.",
-                    extra={"model_name": model_name, "error": str(exc)},
+                        extra={"model_name": model_name, "error": str(exc)},
                 )
         return None
+
+    def _load_module_from_epaper_discovery(self, epaper_package: Any, import_errors: list[str]) -> Any | None:
+        model_names = self._discover_epaper_model_names(epaper_package)
+        for model_name in model_names:
+            module_name = f"epaper.{model_name}"
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as exc:
+                import_errors.append(f"{module_name}: {exc}")
+                logger.debug(
+                    "Failed to import discovered epaper module.",
+                    extra={"module": module_name, "error": str(exc)},
+                )
+                continue
+
+            if not hasattr(module, "EPD"):
+                import_errors.append(f"{module_name}: missing EPD class")
+                continue
+
+            if not self._module_matches_target_resolution(module):
+                width = getattr(module, "EPD_WIDTH", "unknown")
+                height = getattr(module, "EPD_HEIGHT", "unknown")
+                import_errors.append(
+                    f"{module_name}: unsupported panel size {width}x{height}"
+                )
+                continue
+
+            self._epd_module_name = module_name
+            logger.info(
+                "Loaded Waveshare module from discovered epaper module path.",
+                extra={"model_name": model_name},
+            )
+            return module
+        return None
+
+    def _discover_epaper_model_names(self, epaper_package: Any) -> list[str]:
+        discovered: set[str] = {"epd2in7_V2", "epd2in7"}
+        package_paths = getattr(epaper_package, "__path__", None)
+        if package_paths is not None:
+            for module_info in pkgutil.iter_modules(package_paths):
+                model_name = module_info.name
+                if "2in7" not in model_name.lower():
+                    continue
+                if not model_name.lower().startswith("epd"):
+                    continue
+                discovered.add(model_name)
+
+        return sorted(discovered, key=self._epaper_model_priority)
+
+    def _epaper_model_priority(self, model_name: str) -> tuple[int, str]:
+        normalized = model_name.lower()
+        if normalized == "epd2in7_v2":
+            return (0, normalized)
+        if normalized == "epd2in7":
+            return (1, normalized)
+        if "2in7" in normalized and "v2" in normalized:
+            return (2, normalized)
+        if "2in7" in normalized:
+            return (3, normalized)
+        return (99, normalized)
+
+    def _module_matches_target_resolution(self, module: Any) -> bool:
+        width = getattr(module, "EPD_WIDTH", None)
+        height = getattr(module, "EPD_HEIGHT", None)
+        if not isinstance(width, int) or not isinstance(height, int):
+            return True
+        return {width, height} == {self.WIDTH, self.HEIGHT}
 
     def _release_gpio_resources(self) -> None:
         self._cleanup_gpiozero_pin_factory()
@@ -315,7 +375,13 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                     self._settings.display_gpio_cs_pin,
                 }
             )
-            gpio_module.cleanup(pins)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="No channels have been set up yet - nothing to clean up!",
+                    category=RuntimeWarning,
+                )
+                gpio_module.cleanup(pins)
         except Exception:
             logger.debug("Unable to cleanup RPi.GPIO pins during display cleanup.", exc_info=True)
 
@@ -351,5 +417,5 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         python_executable = sys.executable or "python"
         return (
             "Install dependency with: "
-            f"{python_executable} -m pip install --upgrade waveshare-epaper gpiozero lgpio"
+            f"{python_executable} -m pip install --upgrade waveshare-epaper gpiozero"
         )

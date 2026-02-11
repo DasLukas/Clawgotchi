@@ -4,8 +4,10 @@ import importlib
 import logging
 import os
 from pathlib import Path
+import pkgutil
 import pwd
 from typing import Any
+import warnings
 
 from PIL import Image
 
@@ -126,6 +128,9 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
 
         try:
             epaper_package = importlib.import_module("epaper")
+            discovered = self._load_epaper_module_by_discovery(epaper_package)
+            if discovered is not None:
+                return discovered
             if hasattr(epaper_package, "epaper"):
                 for model_name in ("epd2in7_V2", "epd2in7"):
                     try:
@@ -151,6 +156,49 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
                 ) from last_error
             raise ImportError("Unable to import Waveshare 2.7 inch EPD module.") from last_error
         raise ImportError("Unable to import Waveshare 2.7 inch EPD module.")
+
+    def _load_epaper_module_by_discovery(self, epaper_package: Any) -> Any | None:
+        discovered: set[str] = {"epd2in7_V2", "epd2in7"}
+        package_paths = getattr(epaper_package, "__path__", None)
+        if package_paths is not None:
+            for module_info in pkgutil.iter_modules(package_paths):
+                model_name = module_info.name
+                if "2in7" not in model_name.lower():
+                    continue
+                if not model_name.lower().startswith("epd"):
+                    continue
+                discovered.add(model_name)
+
+        for model_name in sorted(discovered, key=self._epaper_model_priority):
+            module_name = f"epaper.{model_name}"
+            try:
+                module = importlib.import_module(module_name)
+            except Exception:
+                continue
+            if not hasattr(module, "EPD"):
+                continue
+            if self._module_matches_target_resolution(module):
+                return module
+        return None
+
+    def _epaper_model_priority(self, model_name: str) -> tuple[int, str]:
+        normalized = model_name.lower()
+        if normalized == "epd2in7_v2":
+            return (0, normalized)
+        if normalized == "epd2in7":
+            return (1, normalized)
+        if "2in7" in normalized and "v2" in normalized:
+            return (2, normalized)
+        if "2in7" in normalized:
+            return (3, normalized)
+        return (99, normalized)
+
+    def _module_matches_target_resolution(self, module: Any) -> bool:
+        width = getattr(module, "EPD_WIDTH", None)
+        height = getattr(module, "EPD_HEIGHT", None)
+        if not isinstance(width, int) or not isinstance(height, int):
+            return True
+        return {width, height} == {264, 176}
 
     def _clear_display(self) -> None:
         if self._epd is None:
@@ -205,7 +253,13 @@ class WaveshareEPaper2in7Driver(DisplayDriver):
                     self._settings.display_gpio_cs_pin,
                 }
             )
-            gpio_module.cleanup(pins)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="No channels have been set up yet - nothing to clean up!",
+                    category=RuntimeWarning,
+                )
+                gpio_module.cleanup(pins)
         except Exception:
             logger.debug("Unable to cleanup RPi.GPIO pins during display cleanup.", exc_info=True)
 

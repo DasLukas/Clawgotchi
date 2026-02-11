@@ -375,7 +375,7 @@ id clawgotchi
 - Install or upgrade the Waveshare packages in the app venv:
 
 ```bash
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper gpiozero lgpio
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper gpiozero
 ```
 
 - Verify import:
@@ -388,6 +388,12 @@ sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -c "import epaper, gpiozero;
 
 ```bash
 sudo systemctl restart clawgotchi.service
+```
+
+- Optional: if your image provides a stable `python3-lgpio` package and you still see GPIO edge-detection issues, install:
+
+```bash
+sudo apt-get install -y python3-lgpio
 ```
 
 ### SPI not enabled automatically
