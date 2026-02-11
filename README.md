@@ -361,6 +361,26 @@ ls -l /dev/spidev0.0
 - Make sure the `clawgotchi` user can access the SPI device group on your OS image.
 - If backend activation reports a privilege error, add the one-time sudoers snippet from the `Waveshare ePaper Plugin` section.
 
+### `No module named 'waveshare_epd'`
+
+- Install or upgrade the Waveshare packages in the app venv:
+
+```bash
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epd waveshare-epaper
+```
+
+- Verify import:
+
+```bash
+sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -c "import waveshare_epd, epaper; print('ok')"
+```
+
+- Restart service:
+
+```bash
+sudo systemctl restart clawgotchi.service
+```
+
 ### SPI not enabled automatically
 
 - Run:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import logging
 from pathlib import Path
+import sys
 from typing import Any
 
 from PIL import Image
@@ -157,6 +158,7 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
     def _load_epd_module(self) -> Any:
         candidates = ("waveshare_epd.epd2in7_V2", "waveshare_epd.epd2in7")
         last_error: Exception | None = None
+        import_errors: list[str] = []
         for module_name in candidates:
             try:
                 module = importlib.import_module(module_name)
@@ -164,13 +166,18 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                 return module
             except Exception as exc:
                 last_error = exc
+                import_errors.append(f"{module_name}: {exc}")
                 logger.debug("Failed to import Waveshare module.", extra={"module": module_name, "error": str(exc)})
+
+        epaper_module = self._load_epd_module_from_epaper(import_errors=import_errors)
+        if epaper_module is not None:
+            return epaper_module
 
         if isinstance(last_error, PrivilegeRequiredError):
             raise last_error
-        if last_error is not None:
-            raise ImportError("Failed to import Waveshare Python driver package.") from last_error
-        raise ImportError("Failed to import Waveshare Python driver package.")
+        install_hint = self._build_install_hint()
+        details = "; ".join(import_errors) if import_errors else "No module candidates were importable."
+        raise ImportError(f"Failed to import Waveshare Python driver package. {details}. {install_hint}") from last_error
 
     def _configure_epd_module(self, module: Any) -> None:
         config_module_name = f"{module.__package__}.epdconfig"
@@ -224,3 +231,36 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
             if callable(method):
                 return method
         return None
+
+    def _load_epd_module_from_epaper(self, import_errors: list[str]) -> Any | None:
+        try:
+            epaper_package = importlib.import_module("epaper")
+        except Exception as exc:
+            import_errors.append(f"epaper: {exc}")
+            return None
+
+        for model_name in ("epd2in7_V2", "epd2in7"):
+            try:
+                if hasattr(epaper_package, "epaper"):
+                    module = epaper_package.epaper(model_name)
+                    if module is not None:
+                        self._epd_module_name = f"epaper.{model_name}"
+                        logger.info(
+                            "Loaded Waveshare module from epaper package compatibility API.",
+                            extra={"model_name": model_name},
+                        )
+                        return module
+            except Exception as exc:
+                import_errors.append(f"epaper({model_name}): {exc}")
+                logger.debug(
+                    "Failed to load model from epaper package compatibility API.",
+                    extra={"model_name": model_name, "error": str(exc)},
+                )
+        return None
+
+    def _build_install_hint(self) -> str:
+        python_executable = sys.executable or "python"
+        return (
+            "Install dependency with: "
+            f"{python_executable} -m pip install --upgrade waveshare-epd waveshare-epaper"
+        )

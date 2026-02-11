@@ -6,6 +6,7 @@
   "entrypoint": "plugin.py",
   "class_name": "WaveshareEPaper27BWPlugin",
   "dependencies": [
+    "waveshare-epd>=0.0.6",
     "waveshare-epaper>=1.3.0,<2.0.0",
     "spidev>=3.6"
   ],
