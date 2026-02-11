@@ -1,11 +1,23 @@
 {
   "id": "default",
   "name": "Default ePaper Theme",
-  "version": "0.1.0",
-  "description": "Default fullframe sprite theme for 2.7 inch Waveshare display.",
-  "preview": "Monochrome idle and scratch animation set.",
+  "version": "0.2.0",
+  "description": "Default sprite-based pet theme for monochrome displays.",
+  "preview": "Sprite animation set with sidebar-aware placement.",
   "stylesheet": "assets/style.css",
-  "placement_mode": "fullframe",
+  "render": {
+    "base_sprite_size": [160, 128],
+    "dither": false,
+    "threshold": 128
+  },
+  "placement": {
+    "mode": "sprite",
+    "anchor": "bottom_center",
+    "offset_x": 0,
+    "offset_y": -2,
+    "scale_mode": "integer_only",
+    "scale": 1.0
+  },
   "canvas_width": 264,
   "canvas_height": 176,
   "default_animation": "idle",

@@ -5,7 +5,10 @@ from pathlib import Path
 
 from PIL import Image
 
+from app.application.input.router import InputRouter
+from app.application.ports.display import DisplayCapabilities
 from app.application.services.render_service import RenderService
+from app.application.ui.menu_controller import MenuController
 from app.domain.models.pet_state import PetState
 from app.infrastructure.themes.theme_loader import ThemeLoader
 from core.display_manager import DisplayManager
@@ -60,10 +63,21 @@ def test_idle_animation_frame_progression(tmp_path: Path) -> None:
     loader = ThemeLoader(themes_root)
     framebuffer = FrameBuffer1Bit(width=264, height=176)
     display_manager = DisplayManager([NullDisplaySink()])
+    capabilities = DisplayCapabilities(
+        width=264,
+        height=176,
+        color_mode="1bit",
+        rotation=0,
+        supports_partial_update=False,
+        typical_refresh_ms=1200,
+    )
     render_service = RenderService(
         theme_loader=loader,
         framebuffer=framebuffer,
         display_manager=display_manager,
+        display_capabilities=capabilities,
+        input_router=InputRouter(),
+        menu_controller=MenuController.create_default(action_dispatcher=lambda _: None),
         default_theme_id="default",
     )
 
@@ -84,10 +98,21 @@ def test_scratch_duration_fallback_and_frame_progression(tmp_path: Path) -> None
     loader = ThemeLoader(themes_root)
     framebuffer = FrameBuffer1Bit(width=264, height=176)
     display_manager = DisplayManager([NullDisplaySink()])
+    capabilities = DisplayCapabilities(
+        width=264,
+        height=176,
+        color_mode="1bit",
+        rotation=0,
+        supports_partial_update=False,
+        typical_refresh_ms=1200,
+    )
     render_service = RenderService(
         theme_loader=loader,
         framebuffer=framebuffer,
         display_manager=display_manager,
+        display_capabilities=capabilities,
+        input_router=InputRouter(),
+        menu_controller=MenuController.create_default(action_dispatcher=lambda _: None),
         default_theme_id="default",
     )
 

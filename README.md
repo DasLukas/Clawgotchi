@@ -11,6 +11,8 @@ Clawgotchi ist ein erweiterbares Raspberry-Pi-Projekt mit FastAPI-Weboberflaeche
 - Hintergrund-Worker fuer Tick-Loop und Command-Queue
 - Hardware display backends via plugins (Dummy + Waveshare ePaper 2.7" B/W)
 - Virtual Display Mirror in Web UI backed by a shared in-memory 1-bit framebuffer
+- Sidebar menu rendered directly into the shared framebuffer (hardware + web mirror)
+- Sprite-based pet rendering with legacy fullframe compatibility mode
 
 ## Voraussetzungen
 
@@ -285,12 +287,19 @@ The web UI dashboard (`/dashboard`) includes a centered virtual tamagotchi displ
 - Hardware sinks and web mirror both consume the same framebuffer source
 - WebSocket updates on `/ws/display` with polling fallback in the browser
 - No separate display page is required
+- Four virtual input buttons map to the same input stream as hardware GPIO buttons: `NEXT`, `BACK`, `CONFIRM`, `SPECIAL`
+- Pet rendering uses sprite placement in the content viewport while the left sidebar menu remains always visible
 
 Display API endpoints:
 
 - `GET /api/display/capabilities` -> `{ "width": 264, "height": 176, "mode": "1bit" }`
 - `GET /api/display/frame.png` -> latest framebuffer image
 - `GET /api/display/frame.meta` -> `{ "version", "updated_at_ms", "width", "height" }`
+- `POST /api/input/button` -> publish virtual button input (`NEXT`, `BACK`, `CONFIRM`, `SPECIAL`)
+
+## Theme Authoring
+
+For a complete guide to creating sprite-based themes and legacy compatibility manifests, see `CONTRIBUTER.md`.
 
 ## Updating
 

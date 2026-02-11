@@ -232,14 +232,26 @@ class TickLoopService:
             default_pet_name = self._settings_repository.get("setup.pet_name", "Clawgotchi") or "Clawgotchi"
             state = self._state_repository.load_or_create(default_pet_name)
 
+            menu_changed = self._render_service.process_input_events(max_events=32)
+            events: list[DomainEvent] = []
+            menu_actions = self._render_service.consume_menu_actions()
+            for action_name in menu_actions:
+                menu_command = PetCommand(type=action_name, intensity=0.8, source="menu")
+                events.extend(state.apply_command(menu_command))
+                events.extend(await self._plugin_runtime.on_command(state, menu_command))
+
             now_ts = time.time()
-            events = state.apply_tick()
+            events.extend(state.apply_tick())
             events.extend(await self._plugin_runtime.on_tick(state))
 
             state.pet_state.sync_identity(name=state.pet.name, emotion=state.pet.emotion.value)
             state.pet_state.ensure_idle_if_expired(now_ts)
 
-            rendered = self._render_if_needed(state=state, now_ts=now_ts)
+            rendered = self._render_if_needed(
+                state=state,
+                now_ts=now_ts,
+                force=menu_changed or bool(menu_actions),
+            )
             if rendered:
                 events.append(
                     DomainEvent(
@@ -259,12 +271,13 @@ class TickLoopService:
             )
             return state_version
 
-    def _render_if_needed(self, state: DeviceState, now_ts: float) -> bool:
+    def _render_if_needed(self, state: DeviceState, now_ts: float, force: bool = False) -> bool:
         self._render_service.set_theme(state.active_theme_id)
         try:
-            decision = self._render_service.should_render(state.pet_state, now_ts=now_ts)
-            if not decision.should_render:
-                return False
+            if not force:
+                decision = self._render_service.should_render(state.pet_state, now_ts=now_ts)
+                if not decision.should_render:
+                    return False
 
             self._render_service.render_frame(state.pet_state, now_ts=now_ts)
             self._render_service.push_framebuffer()

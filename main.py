@@ -13,6 +13,7 @@ from app.config import ConfigResolver
 from app.container import ApplicationContainer
 from app.presentation.api import router as api_router
 from app.presentation.routes_display import router as display_router
+from app.presentation.routes_input import router as input_router
 from app.presentation.web import router as web_router
 
 
@@ -36,6 +37,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
 
     app.include_router(api_router)
     app.include_router(display_router)
+    app.include_router(input_router)
     app.include_router(web_router)
 
     static_directory = Path(__file__).resolve().parent / "app" / "presentation" / "static"

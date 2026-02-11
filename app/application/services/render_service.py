@@ -6,7 +6,14 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from app.application.input.router import InputRouter
+from app.application.pet.pet_sprite_renderer import PetSpriteRenderer
+from app.application.ports.display import DisplayCapabilities
+from app.application.render.layout import LayoutCalculator
+from app.application.render.screen_renderer import MenuSidebarRenderer, RenderPayload, ScreenRenderer
+from app.application.ui.menu_controller import MenuController, MenuSnapshot
 from app.domain.models.pet_state import PetState
+from app.domain.ui.menu import MenuEntry
 from core.display_manager import DisplayManager
 from core.framebuffer import FrameBuffer1Bit
 
@@ -39,18 +46,62 @@ class RenderService:
         theme_loader: ThemeLoaderPort,
         framebuffer: FrameBuffer1Bit,
         display_manager: DisplayManager,
+        display_capabilities: DisplayCapabilities,
+        input_router: InputRouter,
+        menu_controller: MenuController,
         default_theme_id: str = "default",
     ) -> None:
         self._theme_loader = theme_loader
         self._framebuffer = framebuffer
         self._display_manager = display_manager
+        self._display_capabilities = display_capabilities
         self._active_theme_id = default_theme_id
+        self._input_router = input_router
+        self._menu_controller = menu_controller
+        self._pending_menu_actions: list[str] = []
+
+        self._screen_renderer = ScreenRenderer(
+            layout_calculator=LayoutCalculator(),
+            menu_sidebar_renderer=MenuSidebarRenderer(),
+            pet_sprite_renderer=PetSpriteRenderer(theme_loader=theme_loader),
+        )
 
     def set_theme(self, theme_id: str) -> None:
         self._active_theme_id = theme_id
 
+    def set_display_context(self, framebuffer: FrameBuffer1Bit, capabilities: DisplayCapabilities) -> None:
+        self._framebuffer = framebuffer
+        self._display_capabilities = capabilities
+
     def get_framebuffer(self) -> FrameBuffer1Bit:
         return self._framebuffer
+
+    def get_display_capabilities(self) -> DisplayCapabilities:
+        return self._display_capabilities
+
+    def get_menu_snapshot(self) -> MenuSnapshot:
+        return self._menu_controller.get_snapshot()
+
+    def register_menu_root_item(self, item: MenuEntry) -> None:
+        self._menu_controller.register_root_item(item)
+
+    def process_input_events(self, max_events: int = 32) -> bool:
+        changed = False
+        for event in self._input_router.drain(max_events=max_events):
+            if self._menu_controller.handle_event(event):
+                changed = True
+
+        new_actions = self._menu_controller.consume_pending_actions()
+        if new_actions:
+            self._pending_menu_actions.extend(new_actions)
+            changed = True
+
+        return changed
+
+    def consume_menu_actions(self) -> list[str]:
+        actions = list(self._pending_menu_actions)
+        self._pending_menu_actions.clear()
+        return actions
 
     def should_render(self, pet_state: PetState, now_ts: float) -> RenderDecision:
         manifest = self._safe_load_manifest(self._active_theme_id)
@@ -81,23 +132,18 @@ class RenderService:
             now_ts=now_ts,
         )
 
-        frame_path = animation_config.frames[frame_index] if animation_config.frames else None
-        canvas = Image.new("1", (self._framebuffer.width, self._framebuffer.height), color=1)
+        changed = self._screen_renderer.render(
+            framebuffer=self._framebuffer,
+            capabilities=self._display_capabilities,
+            payload=RenderPayload(
+                theme_id=self._active_theme_id,
+                manifest=manifest,
+                animation_name=animation_name,
+                frame_index=frame_index,
+            ),
+            menu_controller=self._menu_controller,
+        )
 
-        if frame_path:
-            try:
-                source = self._theme_loader.load_frame(f"{self._active_theme_id}/{frame_path}")
-                source_1bit = source.convert("1", dither=Image.NONE)
-                if manifest.placement_mode == "fullframe":
-                    if source_1bit.size != (manifest.canvas_width, manifest.canvas_height):
-                        source_1bit = source_1bit.resize((manifest.canvas_width, manifest.canvas_height))
-                    canvas.paste(source_1bit, (0, 0))
-                else:
-                    canvas.paste(source_1bit, (0, 0))
-            except Exception:
-                logger.exception("Failed to load frame asset", extra={"theme_id": self._active_theme_id, "frame": frame_path})
-
-        changed = self._framebuffer.replace_from_image(canvas)
         pet_state.mark_rendered(now_ts=now_ts, frame_index=frame_index)
         return changed
 

@@ -5,7 +5,9 @@
   "description": "Warm ePaper inspired visual baseline.",
   "preview": "A warm sepia style designed for ePaper readability.",
   "stylesheet": "assets/style.css",
-  "placement_mode": "fullframe",
+  "placement": {
+    "mode": "legacy_fullframe"
+  },
   "canvas_width": 264,
   "canvas_height": 176,
   "default_animation": "idle",

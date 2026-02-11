@@ -240,20 +240,11 @@ async def dashboard(request: Request, container=Depends(get_container)):
     if not container.initialize_device_service.is_completed():
         return RedirectResponse(url="/setup", status_code=status.HTTP_303_SEE_OTHER)
 
-    status_payload = container.status_service.get_status()
-    theme_stylesheet = ""
-    for theme in container.theme_service.list_themes():
-        if theme["theme_id"] == status_payload["state"]["active_theme_id"]:
-            theme_stylesheet = theme["manifest"].get("stylesheet", "")
-            break
-
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "app_name": container.config.app_name,
-            "status": status_payload,
-            "theme_stylesheet": theme_stylesheet,
             "capabilities": container.get_display_capabilities(),
             "frame_meta": container.get_display_frame_meta(),
         },

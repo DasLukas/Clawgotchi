@@ -8,7 +8,8 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from app.application.ports.display import DisplayDriver
+from app.application.input.router import InputRouter
+from app.application.ports.display import DisplayCapabilities, DisplayDriver
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
     CommandHandlerService,
@@ -22,11 +23,13 @@ from app.application.services import (
     ThemeService,
     TickLoopService,
 )
+from app.application.ui.menu_controller import MenuController
 from app.config import ConfigResolver, RuntimeConfig
 from app.infrastructure.database import Database
 from app.infrastructure.display.dummy import DummyDisplayDriver
 from app.infrastructure.display.sinks import DisplayDriverSink
 from app.infrastructure.hardware import DummyAudioDriver, DummyInputDriver, DummySensorDriver
+from app.infrastructure.input.gpio_buttons import GPIOButtonDriver
 from app.infrastructure.logging import configure_logging
 from app.infrastructure.plugin_loader import FileSystemPluginLoader
 from app.infrastructure.repositories import (
@@ -38,6 +41,7 @@ from app.infrastructure.repositories import (
 from app.infrastructure.theme_loader import FileSystemThemeLoader
 from app.infrastructure.themes.theme_loader import ThemeLoader
 from app.domain.models.pet_state import PetState
+from app.domain.ui.input import ButtonId, InputEvent
 from config.settings import DisplaySettings
 from core.display_manager import DisplayManager
 from core.framebuffer import FrameBuffer1Bit
@@ -53,8 +57,14 @@ def _normalize_hardware_profile_id(profile_id: str, default: str = "dummy") -> s
 
 
 class ApplicationContainer:
-    DEFAULT_FRAMEBUFFER_WIDTH = 264
-    DEFAULT_FRAMEBUFFER_HEIGHT = 176
+    DEFAULT_CAPABILITIES = DisplayCapabilities(
+        width=264,
+        height=176,
+        color_mode="1bit",
+        rotation=0,
+        supports_partial_update=False,
+        typical_refresh_ms=1200,
+    )
 
     def __init__(self, config_overrides: dict | None = None) -> None:
         resolver = ConfigResolver(extra_overrides=config_overrides)
@@ -95,24 +105,45 @@ class ApplicationContainer:
         self.theme_loader = FileSystemThemeLoader(self.config.theme_directory)
         self.theme_asset_loader = ThemeLoader(self.config.theme_directory)
 
-        self.framebuffer = FrameBuffer1Bit(
-            width=self.DEFAULT_FRAMEBUFFER_WIDTH,
-            height=self.DEFAULT_FRAMEBUFFER_HEIGHT,
-        )
         self.display_manager = DisplayManager()
         self._display_update_condition = asyncio.Condition()
         self._display_update_loop: asyncio.AbstractEventLoop | None = None
-        self._latest_display_version = self.framebuffer.version
-        self._latest_display_updated_at_ms = self.framebuffer.updated_at_ms
         self.display_manager.subscribe(self._on_display_push)
 
+        self.input_router = InputRouter(max_queue_size=512)
+        self.menu_controller = MenuController.create_default(
+            action_dispatcher=lambda _action_id: None,
+            indicator_provider=self._menu_indicators,
+        )
+
         self.display_driver: DisplayDriver = self._create_base_display_driver()
+        self.active_display_capabilities = self._safe_get_capabilities(self.display_driver)
+        self.framebuffer = FrameBuffer1Bit(
+            width=self.active_display_capabilities.width,
+            height=self.active_display_capabilities.height,
+        )
+        self._latest_display_version = self.framebuffer.version
+        self._latest_display_updated_at_ms = self.framebuffer.updated_at_ms
         self.display_manager.set_sinks([DisplayDriverSink(self.display_driver)])
         self.render_service = RenderService(
             theme_loader=self.theme_asset_loader,
             framebuffer=self.framebuffer,
             display_manager=self.display_manager,
+            display_capabilities=self.active_display_capabilities,
+            input_router=self.input_router,
+            menu_controller=self.menu_controller,
             default_theme_id="default",
+        )
+
+        self.gpio_button_driver = GPIOButtonDriver(
+            router=self.input_router,
+            pin_mapping={
+                ButtonId.NEXT: self.config.button_gpio_next_pin,
+                ButtonId.BACK: self.config.button_gpio_back_pin,
+                ButtonId.CONFIRM: self.config.button_gpio_confirm_pin,
+                ButtonId.SPECIAL: self.config.button_gpio_special_pin,
+            },
+            debounce_ms=self.config.button_gpio_debounce_ms,
         )
 
         self.input_driver = DummyInputDriver()
@@ -224,6 +255,7 @@ class ApplicationContainer:
         self.refresh_display_driver(profile_id=state.hardware_profile)
         self.render_service.set_theme(state.active_theme_id)
         self._render_current_pet_frame()
+        self.gpio_button_driver.start()
 
         self._tasks = [
             asyncio.create_task(self.command_worker.run(), name="command-worker"),
@@ -242,6 +274,7 @@ class ApplicationContainer:
                 pass
 
         await self.plugin_runtime.shutdown()
+        self.gpio_button_driver.stop()
         self._display_update_loop = None
 
     def refresh_display_driver(self, profile_id: str) -> dict[str, Any]:
@@ -301,9 +334,9 @@ class ApplicationContainer:
 
     def get_display_capabilities(self) -> dict[str, Any]:
         return {
-            "width": self.framebuffer.width,
-            "height": self.framebuffer.height,
-            "mode": "1bit",
+            "width": self.active_display_capabilities.width,
+            "height": self.active_display_capabilities.height,
+            "mode": self.active_display_capabilities.color_mode,
         }
 
     def get_display_frame_png(self) -> bytes:
@@ -313,9 +346,17 @@ class ApplicationContainer:
         return {
             "version": self.framebuffer.version,
             "updated_at_ms": self.framebuffer.updated_at_ms,
-            "width": self.framebuffer.width,
-            "height": self.framebuffer.height,
+            "width": self.active_display_capabilities.width,
+            "height": self.active_display_capabilities.height,
         }
+
+    def publish_button_event(self, button: ButtonId, ts_ms: int | None = None) -> None:
+        self.input_router.publish(
+            InputEvent(
+                button=button,
+                ts_ms=ts_ms if ts_ms is not None else int(time.time() * 1000),
+            )
+        )
 
     async def wait_for_display_update(self, last_seen_version: int, timeout_seconds: float = 10.0) -> dict[str, Any] | None:
         async with self._display_update_condition:
@@ -356,8 +397,7 @@ class ApplicationContainer:
             except Exception:
                 logger.debug("Failed to cleanup candidate display driver after init error.", exc_info=True)
             raise
-
-        self._assert_driver_compatible(driver)
+        new_capabilities = self._safe_get_capabilities(driver)
 
         try:
             self.display_driver.sleep()
@@ -366,15 +406,29 @@ class ApplicationContainer:
 
         self.display_driver = driver
         self.display_manager.set_sinks([DisplayDriverSink(driver)])
+        self._apply_display_capabilities(new_capabilities)
 
-    def _assert_driver_compatible(self, driver: DisplayDriver) -> None:
-        capabilities = driver.get_capabilities()
-        if capabilities.width != self.framebuffer.width or capabilities.height != self.framebuffer.height:
-            raise ValueError(
-                "Display driver resolution does not match framebuffer resolution "
-                f"{self.framebuffer.width}x{self.framebuffer.height}: "
-                f"{capabilities.width}x{capabilities.height}."
-            )
+    def _safe_get_capabilities(self, driver: DisplayDriver) -> DisplayCapabilities:
+        try:
+            capabilities = driver.get_capabilities()
+            if capabilities.width <= 0 or capabilities.height <= 0:
+                return self.DEFAULT_CAPABILITIES
+            return capabilities
+        except Exception:
+            logger.exception("Unable to read display capabilities. Falling back to defaults.")
+            return self.DEFAULT_CAPABILITIES
+
+    def _apply_display_capabilities(self, capabilities: DisplayCapabilities) -> None:
+        self.active_display_capabilities = capabilities
+
+        if self.framebuffer.width == capabilities.width and self.framebuffer.height == capabilities.height:
+            self.render_service.set_display_context(self.framebuffer, capabilities)
+            return
+
+        self.framebuffer = FrameBuffer1Bit(width=capabilities.width, height=capabilities.height)
+        self._latest_display_version = self.framebuffer.version
+        self._latest_display_updated_at_ms = self.framebuffer.updated_at_ms
+        self.render_service.set_display_context(self.framebuffer, capabilities)
 
     def _render_hardware_test_pattern(self, backend_label: str) -> None:
         frame_a = Image.new("1", (self.framebuffer.width, self.framebuffer.height), color=1)
@@ -402,6 +456,12 @@ class ApplicationContainer:
         }
         self._hardware_status = status
         return status
+
+    def _menu_indicators(self) -> list[str]:
+        return [
+            f"HW:{self._hardware_status.get('backend', 'dummy')[:6]}",
+            f"W:{self.active_display_capabilities.width}",
+        ]
 
     def _on_display_push(self, version: int, updated_at_ms: int) -> None:
         self._latest_display_version = version

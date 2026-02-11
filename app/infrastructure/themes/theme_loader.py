@@ -22,6 +22,65 @@ class ThemeAnimation(BaseModel):
         return value
 
 
+class ThemeRenderConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    base_sprite_size: list[int] = Field(default_factory=list)
+    dither: bool = False
+    threshold: int = 128
+
+    @field_validator("base_sprite_size")
+    @classmethod
+    def validate_base_sprite_size(cls, value: list[int]) -> list[int]:
+        if not value:
+            return value
+        if len(value) != 2:
+            raise ValueError("render.base_sprite_size must contain exactly two integers: [width, height].")
+        width, height = int(value[0]), int(value[1])
+        if width <= 0 or height <= 0:
+            raise ValueError("render.base_sprite_size values must be positive.")
+        return [width, height]
+
+    @field_validator("threshold")
+    @classmethod
+    def validate_threshold(cls, value: int) -> int:
+        return max(0, min(255, int(value)))
+
+
+class ThemePlacement(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    mode: str = "sprite"
+    anchor: str = "bottom_center"
+    offset_x: int = 0
+    offset_y: int = 0
+    scale_mode: str = "integer_only"
+    scale: float = 1.0
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized == "fullframe":
+            return "legacy_fullframe"
+        if normalized not in {"sprite", "legacy_fullframe"}:
+            return "sprite"
+        return normalized
+
+    @field_validator("scale_mode")
+    @classmethod
+    def validate_scale_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"integer_only", "free"}:
+            return "integer_only"
+        return normalized
+
+    @field_validator("scale")
+    @classmethod
+    def validate_scale(cls, value: float) -> float:
+        return max(0.1, float(value))
+
+
 class ThemeManifest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -31,26 +90,37 @@ class ThemeManifest(BaseModel):
     description: str = ""
     preview: str = ""
     stylesheet: str = "assets/style.css"
-    placement_mode: str = "fullframe"
     canvas_width: int = 264
     canvas_height: int = 176
     default_animation: str = "idle"
+    render: ThemeRenderConfig = Field(default_factory=ThemeRenderConfig)
+    placement: ThemePlacement = Field(default_factory=ThemePlacement)
     animations: dict[str, ThemeAnimation] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_placement(cls, value: object) -> object:
+    def normalize_legacy_fields(cls, value: object) -> object:
         if not isinstance(value, dict):
             return value
-        if "placement_mode" in value:
-            return value
 
-        placement = value.get("placement")
-        if isinstance(placement, dict):
-            mode = placement.get("mode")
-            if isinstance(mode, str):
-                value["placement_mode"] = mode
-        return value
+        payload = dict(value)
+
+        if "placement" not in payload:
+            placement_mode = payload.get("placement_mode")
+            if isinstance(placement_mode, str):
+                payload["placement"] = {"mode": placement_mode}
+
+        placement = payload.get("placement")
+        if isinstance(placement, dict) and "mode" not in placement:
+            placement_mode = payload.get("placement_mode")
+            if isinstance(placement_mode, str):
+                placement["mode"] = placement_mode
+
+        return payload
+
+    @property
+    def placement_mode(self) -> str:
+        return self.placement.mode
 
 
 class ThemeLoader:
@@ -103,12 +173,13 @@ class ThemeLoader:
                 self._frame_cache.pop(key, None)
 
     def _validate_manifest_assets(self, theme_id: str, manifest: ThemeManifest) -> None:
-        if manifest.placement_mode != "fullframe":
-            return
-
         for animation in manifest.animations.values():
             for frame in animation.frames:
                 image = self.load_frame(f"{theme_id}/{frame}")
+
+                if manifest.placement.mode != "legacy_fullframe":
+                    continue
+
                 if image.width != manifest.canvas_width or image.height != manifest.canvas_height:
                     raise ValueError(
                         "Theme frame dimensions do not match fullframe canvas: "

@@ -7,7 +7,20 @@
   const frameUrl = frameImage.dataset.frameUrl;
   const metaUrl = frameImage.dataset.metaUrl;
   const wsPath = frameImage.dataset.wsUrl;
+  const screenWindow = document.querySelector(".tamagotchi-screen-window");
   let currentVersion = Number(frameImage.dataset.version || "-1");
+
+  const applyResolution = (width, height) => {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return;
+    }
+
+    frameImage.setAttribute("width", String(width));
+    frameImage.setAttribute("height", String(height));
+    if (screenWindow) {
+      screenWindow.style.aspectRatio = `${width} / ${height}`;
+    }
+  };
 
   const refreshFrame = (version) => {
     if (!Number.isFinite(version)) {
@@ -19,6 +32,14 @@
 
     currentVersion = version;
     frameImage.src = `${frameUrl}?v=${version}`;
+  };
+
+  const applyMeta = (meta) => {
+    if (!meta || typeof meta !== "object") {
+      return;
+    }
+    applyResolution(Number(meta.width), Number(meta.height));
+    refreshFrame(Number(meta.version));
   };
 
   const pollMeta = async () => {
@@ -34,9 +55,9 @@
       }
 
       const payload = await response.json();
-      refreshFrame(Number(payload.version));
+      applyMeta(payload);
     } catch {
-      // Polling intentionally keeps silent when network hiccups occur.
+      // Polling keeps running through short network failures.
     }
   };
 
@@ -53,10 +74,10 @@
       try {
         const payload = JSON.parse(event.data);
         if (payload.event === "frame_updated") {
-          refreshFrame(Number(payload.version));
+          applyMeta(payload);
         }
       } catch {
-        // Ignore malformed payloads and keep polling fallback active.
+        // Ignore malformed payloads.
       }
     });
 
@@ -69,6 +90,52 @@
     });
   };
 
+  const postButton = async (button) => {
+    try {
+      await fetch("/api/input/button", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ button }),
+      });
+    } catch {
+      // Input errors are ignored to keep UI responsive.
+    }
+  };
+
+  document.querySelectorAll(".virtual-control-button").forEach((element) => {
+    element.addEventListener("click", () => {
+      const button = element.dataset.button;
+      if (!button) {
+        return;
+      }
+      void postButton(button);
+    });
+  });
+
+  window.addEventListener("keydown", (event) => {
+    const keyMap = {
+      ArrowDown: "NEXT",
+      ArrowUp: "BACK",
+      Enter: "CONFIRM",
+      " ": "SPECIAL",
+    };
+
+    const mapped = keyMap[event.key];
+    if (!mapped) {
+      return;
+    }
+
+    event.preventDefault();
+    void postButton(mapped);
+  });
+
+  applyResolution(
+    Number(frameImage.getAttribute("width")),
+    Number(frameImage.getAttribute("height")),
+  );
   pollMeta();
   window.setInterval(pollMeta, 400);
   connectWebSocket();

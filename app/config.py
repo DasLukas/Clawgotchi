@@ -34,6 +34,11 @@ class RuntimeConfig:
     display_gpio_rst_pin: int
     display_gpio_busy_pin: int
     display_gpio_cs_pin: int
+    button_gpio_next_pin: int
+    button_gpio_back_pin: int
+    button_gpio_confirm_pin: int
+    button_gpio_special_pin: int
+    button_gpio_debounce_ms: int
 
 
 class EnvironmentSettings(BaseSettings):
@@ -63,6 +68,11 @@ class EnvironmentSettings(BaseSettings):
     display_gpio_rst_pin: int = 17
     display_gpio_busy_pin: int = 24
     display_gpio_cs_pin: int = 8
+    button_gpio_next_pin: int = -1
+    button_gpio_back_pin: int = -1
+    button_gpio_confirm_pin: int = -1
+    button_gpio_special_pin: int = -1
+    button_gpio_debounce_ms: int = 120
 
 
 class ConfigResolver:
@@ -96,6 +106,11 @@ class ConfigResolver:
             "display_gpio_rst_pin": 17,
             "display_gpio_busy_pin": 24,
             "display_gpio_cs_pin": 8,
+            "button_gpio_next_pin": -1,
+            "button_gpio_back_pin": -1,
+            "button_gpio_confirm_pin": -1,
+            "button_gpio_special_pin": -1,
+            "button_gpio_debounce_ms": 120,
         }
 
         env_values = self._env.model_dump()
@@ -141,6 +156,11 @@ class ConfigResolver:
             display_gpio_rst_pin=int(merged["display_gpio_rst_pin"]),
             display_gpio_busy_pin=int(merged["display_gpio_busy_pin"]),
             display_gpio_cs_pin=int(merged["display_gpio_cs_pin"]),
+            button_gpio_next_pin=int(merged["button_gpio_next_pin"]),
+            button_gpio_back_pin=int(merged["button_gpio_back_pin"]),
+            button_gpio_confirm_pin=int(merged["button_gpio_confirm_pin"]),
+            button_gpio_special_pin=int(merged["button_gpio_special_pin"]),
+            button_gpio_debounce_ms=int(merged["button_gpio_debounce_ms"]),
         )
 
     def _load_file_values(self, config_file: Path) -> dict[str, Any]:
@@ -163,6 +183,11 @@ class ConfigResolver:
                 "display_gpio_rst_pin",
                 "display_gpio_busy_pin",
                 "display_gpio_cs_pin",
+                "button_gpio_next_pin",
+                "button_gpio_back_pin",
+                "button_gpio_confirm_pin",
+                "button_gpio_special_pin",
+                "button_gpio_debounce_ms",
             }:
                 normalized[key] = int(raw_value)
             elif key in {"tick_interval_seconds"}:
