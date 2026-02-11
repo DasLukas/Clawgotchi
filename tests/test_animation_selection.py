@@ -7,8 +7,10 @@ from PIL import Image
 
 from app.application.services.render_service import RenderService
 from app.domain.models.pet_state import PetState
-from app.infrastructure.display.dummy import DummyDisplayDriver
 from app.infrastructure.themes.theme_loader import ThemeLoader
+from core.display_manager import DisplayManager
+from core.framebuffer import FrameBuffer1Bit
+from core.interfaces import NullDisplaySink
 
 
 def _write_image(path: Path) -> None:
@@ -56,8 +58,14 @@ def _build_theme(tmp_path: Path, include_scratch_duration: bool) -> Path:
 def test_idle_animation_frame_progression(tmp_path: Path) -> None:
     themes_root = _build_theme(tmp_path, include_scratch_duration=True)
     loader = ThemeLoader(themes_root)
-    display = DummyDisplayDriver(write_debug_png=False)
-    render_service = RenderService(theme_loader=loader, display_driver=display, default_theme_id="default")
+    framebuffer = FrameBuffer1Bit(width=264, height=176)
+    display_manager = DisplayManager([NullDisplaySink()])
+    render_service = RenderService(
+        theme_loader=loader,
+        framebuffer=framebuffer,
+        display_manager=display_manager,
+        default_theme_id="default",
+    )
 
     pet_state = PetState.create(name="Mochi", emotion="content")
     pet_state.animation_started_ts = 0.0
@@ -74,8 +82,14 @@ def test_idle_animation_frame_progression(tmp_path: Path) -> None:
 def test_scratch_duration_fallback_and_frame_progression(tmp_path: Path) -> None:
     themes_root = _build_theme(tmp_path, include_scratch_duration=False)
     loader = ThemeLoader(themes_root)
-    display = DummyDisplayDriver(write_debug_png=False)
-    render_service = RenderService(theme_loader=loader, display_driver=display, default_theme_id="default")
+    framebuffer = FrameBuffer1Bit(width=264, height=176)
+    display_manager = DisplayManager([NullDisplaySink()])
+    render_service = RenderService(
+        theme_loader=loader,
+        framebuffer=framebuffer,
+        display_manager=display_manager,
+        default_theme_id="default",
+    )
 
     pet_state = PetState.create(name="Mochi", emotion="happy")
     pet_state.set_temporary_animation("scratch", duration_ms=1200, now_ts=10.0)

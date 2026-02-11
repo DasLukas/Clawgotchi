@@ -204,8 +204,8 @@ class CommandHandlerService:
                 if not decision.should_render:
                     return False
 
-            image = self._render_service.render_frame(state.pet_state, now_ts=now_ts)
-            self._render_service.push_frame(image)
+            self._render_service.render_frame(state.pet_state, now_ts=now_ts)
+            self._render_service.push_framebuffer()
             return True
         except Exception:
             logger.exception("Command render step failed.")
@@ -266,8 +266,8 @@ class TickLoopService:
             if not decision.should_render:
                 return False
 
-            image = self._render_service.render_frame(state.pet_state, now_ts=now_ts)
-            self._render_service.push_frame(image)
+            self._render_service.render_frame(state.pet_state, now_ts=now_ts)
+            self._render_service.push_framebuffer()
             return True
         except Exception:
             logger.exception("Tick render step failed.")

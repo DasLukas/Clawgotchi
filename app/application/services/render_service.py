@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import BytesIO
 import logging
 from typing import Any, Protocol
 
 from PIL import Image
 
-from app.application.ports.display import DisplayDriver, Frame
 from app.domain.models.pet_state import PetState
+from core.display_manager import DisplayManager
+from core.framebuffer import FrameBuffer1Bit
 
 logger = logging.getLogger(__name__)
 
@@ -34,22 +34,33 @@ class RenderService:
     SCRATCH_DEFAULT_DURATION_MS = 1200
     IDLE_DEFAULT_FPS = 0.33
 
-    def __init__(self, theme_loader: ThemeLoaderPort, display_driver: DisplayDriver, default_theme_id: str = "default") -> None:
+    def __init__(
+        self,
+        theme_loader: ThemeLoaderPort,
+        framebuffer: FrameBuffer1Bit,
+        display_manager: DisplayManager,
+        default_theme_id: str = "default",
+    ) -> None:
         self._theme_loader = theme_loader
-        self._display_driver = display_driver
+        self._framebuffer = framebuffer
+        self._display_manager = display_manager
         self._active_theme_id = default_theme_id
-        self._last_image: Image.Image | None = None
 
     def set_theme(self, theme_id: str) -> None:
         self._active_theme_id = theme_id
 
-    def set_display_driver(self, display_driver: DisplayDriver) -> None:
-        self._display_driver = display_driver
+    def get_framebuffer(self) -> FrameBuffer1Bit:
+        return self._framebuffer
 
     def should_render(self, pet_state: PetState, now_ts: float) -> RenderDecision:
         manifest = self._safe_load_manifest(self._active_theme_id)
         animation_name, animation_config = self._resolve_animation(manifest, pet_state.current_animation)
-        frame_index = self._compute_frame_index(pet_state=pet_state, animation=animation_name, animation_config=animation_config, now_ts=now_ts)
+        frame_index = self._compute_frame_index(
+            pet_state=pet_state,
+            animation=animation_name,
+            animation_config=animation_config,
+            now_ts=now_ts,
+        )
         frame_changed = frame_index != pet_state.animation_frame_index
 
         min_interval_ms = 1000 if animation_name == "scratch" else 2800
@@ -60,14 +71,18 @@ class RenderService:
         should_render = frame_changed or elapsed_ms >= min_interval_ms
         return RenderDecision(should_render, frame_changed, frame_index, min_interval_ms, animation_name)
 
-    def render_frame(self, pet_state: PetState, now_ts: float) -> Image.Image:
+    def render_frame(self, pet_state: PetState, now_ts: float) -> bool:
         manifest = self._safe_load_manifest(self._active_theme_id)
         animation_name, animation_config = self._resolve_animation(manifest, pet_state.current_animation)
-        frame_index = self._compute_frame_index(pet_state=pet_state, animation=animation_name, animation_config=animation_config, now_ts=now_ts)
+        frame_index = self._compute_frame_index(
+            pet_state=pet_state,
+            animation=animation_name,
+            animation_config=animation_config,
+            now_ts=now_ts,
+        )
 
         frame_path = animation_config.frames[frame_index] if animation_config.frames else None
-        capabilities = self._display_driver.get_capabilities()
-        canvas = Image.new("1", (capabilities.width, capabilities.height), color=1)
+        canvas = Image.new("1", (self._framebuffer.width, self._framebuffer.height), color=1)
 
         if frame_path:
             try:
@@ -82,27 +97,23 @@ class RenderService:
             except Exception:
                 logger.exception("Failed to load frame asset", extra={"theme_id": self._active_theme_id, "frame": frame_path})
 
+        changed = self._framebuffer.replace_from_image(canvas)
         pet_state.mark_rendered(now_ts=now_ts, frame_index=frame_index)
-        self._last_image = canvas.copy()
-        return canvas
+        return changed
 
-    def push_frame(self, image: Image.Image) -> None:
-        self._display_driver.render(Frame(image=image))
-        self._last_image = image.copy()
+    def push_framebuffer(self) -> None:
+        self._display_manager.push(self._framebuffer)
 
-    def get_last_frame(self) -> Image.Image | None:
-        if self._last_image is None:
-            return None
-        return self._last_image.copy()
+    def push_image(self, image: Image.Image) -> bool:
+        changed = self._framebuffer.replace_from_image(image)
+        self.push_framebuffer()
+        return changed
 
-    def get_last_frame_png(self) -> bytes | None:
-        image = self.get_last_frame()
-        if image is None:
-            return None
+    def get_last_frame(self) -> Image.Image:
+        return self._framebuffer.to_pil_image()
 
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        return buffer.getvalue()
+    def get_last_frame_png(self) -> bytes:
+        return self._framebuffer.to_png_bytes()
 
     def get_animation_duration_ms(self, animation: str) -> int:
         manifest = self._safe_load_manifest(self._active_theme_id)

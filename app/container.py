@@ -8,7 +8,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from app.application.ports.display import DisplayDriver, Frame
+from app.application.ports.display import DisplayDriver
 from app.application.command_processing import AsyncCommandQueue, CommandWorker, TickWorker
 from app.application.services import (
     CommandHandlerService,
@@ -25,6 +25,7 @@ from app.application.services import (
 from app.config import ConfigResolver, RuntimeConfig
 from app.infrastructure.database import Database
 from app.infrastructure.display.dummy import DummyDisplayDriver
+from app.infrastructure.display.sinks import DisplayDriverSink
 from app.infrastructure.hardware import DummyAudioDriver, DummyInputDriver, DummySensorDriver
 from app.infrastructure.logging import configure_logging
 from app.infrastructure.plugin_loader import FileSystemPluginLoader
@@ -38,6 +39,8 @@ from app.infrastructure.theme_loader import FileSystemThemeLoader
 from app.infrastructure.themes.theme_loader import ThemeLoader
 from app.domain.models.pet_state import PetState
 from config.settings import DisplaySettings
+from core.display_manager import DisplayManager
+from core.framebuffer import FrameBuffer1Bit
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,9 @@ def _normalize_hardware_profile_id(profile_id: str, default: str = "dummy") -> s
 
 
 class ApplicationContainer:
+    DEFAULT_FRAMEBUFFER_WIDTH = 264
+    DEFAULT_FRAMEBUFFER_HEIGHT = 176
+
     def __init__(self, config_overrides: dict | None = None) -> None:
         resolver = ConfigResolver(extra_overrides=config_overrides)
         bootstrap_config = resolver.resolve()
@@ -89,10 +95,23 @@ class ApplicationContainer:
         self.theme_loader = FileSystemThemeLoader(self.config.theme_directory)
         self.theme_asset_loader = ThemeLoader(self.config.theme_directory)
 
+        self.framebuffer = FrameBuffer1Bit(
+            width=self.DEFAULT_FRAMEBUFFER_WIDTH,
+            height=self.DEFAULT_FRAMEBUFFER_HEIGHT,
+        )
+        self.display_manager = DisplayManager()
+        self._display_update_condition = asyncio.Condition()
+        self._display_update_loop: asyncio.AbstractEventLoop | None = None
+        self._latest_display_version = self.framebuffer.version
+        self._latest_display_updated_at_ms = self.framebuffer.updated_at_ms
+        self.display_manager.subscribe(self._on_display_push)
+
         self.display_driver: DisplayDriver = self._create_base_display_driver()
+        self.display_manager.set_sinks([DisplayDriverSink(self.display_driver)])
         self.render_service = RenderService(
             theme_loader=self.theme_asset_loader,
-            display_driver=self.display_driver,
+            framebuffer=self.framebuffer,
+            display_manager=self.display_manager,
             default_theme_id="default",
         )
 
@@ -170,6 +189,7 @@ class ApplicationContainer:
         self.config.theme_directory.mkdir(parents=True, exist_ok=True)
 
     async def startup(self) -> None:
+        self._display_update_loop = asyncio.get_running_loop()
         await self.plugin_service.rescan()
         self.theme_service.rescan()
 
@@ -222,6 +242,7 @@ class ApplicationContainer:
                 pass
 
         await self.plugin_runtime.shutdown()
+        self._display_update_loop = None
 
     def refresh_display_driver(self, profile_id: str) -> dict[str, Any]:
         normalized = _normalize_hardware_profile_id(profile_id, default="dummy")
@@ -240,7 +261,7 @@ class ApplicationContainer:
         if plugin_driver is not None:
             try:
                 self._switch_display_driver(plugin_driver)
-                self._render_hardware_test_pattern(driver=plugin_driver, backend_label=normalized)
+                self._render_hardware_test_pattern(backend_label=normalized)
                 self._render_current_pet_frame()
                 status = self._record_hardware_status(
                     ok=True,
@@ -278,6 +299,37 @@ class ApplicationContainer:
     def get_hardware_status(self) -> dict[str, Any]:
         return dict(self._hardware_status)
 
+    def get_display_capabilities(self) -> dict[str, Any]:
+        return {
+            "width": self.framebuffer.width,
+            "height": self.framebuffer.height,
+            "mode": "1bit",
+        }
+
+    def get_display_frame_png(self) -> bytes:
+        return self.framebuffer.to_png_bytes()
+
+    def get_display_frame_meta(self) -> dict[str, Any]:
+        return {
+            "version": self.framebuffer.version,
+            "updated_at_ms": self.framebuffer.updated_at_ms,
+            "width": self.framebuffer.width,
+            "height": self.framebuffer.height,
+        }
+
+    async def wait_for_display_update(self, last_seen_version: int, timeout_seconds: float = 10.0) -> dict[str, Any] | None:
+        async with self._display_update_condition:
+            if self._latest_display_version > last_seen_version:
+                return self.get_display_frame_meta()
+            try:
+                await asyncio.wait_for(
+                    self._display_update_condition.wait_for(lambda: self._latest_display_version > last_seen_version),
+                    timeout=timeout_seconds,
+                )
+            except TimeoutError:
+                return None
+        return self.get_display_frame_meta()
+
     def _create_base_display_driver(self) -> DisplayDriver:
         dummy = self._create_dummy_driver()
         dummy.init()
@@ -305,31 +357,41 @@ class ApplicationContainer:
                 logger.debug("Failed to cleanup candidate display driver after init error.", exc_info=True)
             raise
 
+        self._assert_driver_compatible(driver)
+
         try:
             self.display_driver.sleep()
         except Exception:
             logger.debug("Current display driver did not sleep cleanly.", exc_info=True)
 
         self.display_driver = driver
-        self.render_service.set_display_driver(driver)
+        self.display_manager.set_sinks([DisplayDriverSink(driver)])
 
-    def _render_hardware_test_pattern(self, driver: DisplayDriver, backend_label: str) -> None:
+    def _assert_driver_compatible(self, driver: DisplayDriver) -> None:
         capabilities = driver.get_capabilities()
-        frame_a = Image.new("1", (capabilities.width, capabilities.height), color=1)
+        if capabilities.width != self.framebuffer.width or capabilities.height != self.framebuffer.height:
+            raise ValueError(
+                "Display driver resolution does not match framebuffer resolution "
+                f"{self.framebuffer.width}x{self.framebuffer.height}: "
+                f"{capabilities.width}x{capabilities.height}."
+            )
+
+    def _render_hardware_test_pattern(self, backend_label: str) -> None:
+        frame_a = Image.new("1", (self.framebuffer.width, self.framebuffer.height), color=1)
         draw_a = ImageDraw.Draw(frame_a)
-        draw_a.rectangle((0, 0, capabilities.width - 1, capabilities.height - 1), outline=0, width=2)
+        draw_a.rectangle((0, 0, self.framebuffer.width - 1, self.framebuffer.height - 1), outline=0, width=2)
         draw_a.text((12, 12), "Clawgotchi ready", fill=0)
         draw_a.text((12, 36), backend_label, fill=0)
         draw_a.text((12, 60), "SPI online", fill=0)
 
-        frame_b = Image.new("1", (capabilities.width, capabilities.height), color=1)
+        frame_b = Image.new("1", (self.framebuffer.width, self.framebuffer.height), color=1)
         draw_b = ImageDraw.Draw(frame_b)
-        draw_b.rectangle((0, 0, capabilities.width - 1, capabilities.height - 1), outline=0, width=2)
+        draw_b.rectangle((0, 0, self.framebuffer.width - 1, self.framebuffer.height - 1), outline=0, width=2)
         draw_b.text((12, 12), "Clawgotchi ready", fill=0)
         draw_b.text((12, 36), "Display test frame 2/2", fill=0)
 
-        driver.render(Frame(image=frame_a))
-        driver.render(Frame(image=frame_b))
+        self.render_service.push_image(frame_a)
+        self.render_service.push_image(frame_b)
 
     def _record_hardware_status(self, ok: bool, backend: str, message: str) -> dict[str, Any]:
         status = {
@@ -340,6 +402,22 @@ class ApplicationContainer:
         }
         self._hardware_status = status
         return status
+
+    def _on_display_push(self, version: int, updated_at_ms: int) -> None:
+        self._latest_display_version = version
+        self._latest_display_updated_at_ms = updated_at_ms
+
+        if self._display_update_loop is None or self._display_update_loop.is_closed():
+            return
+
+        self._display_update_loop.call_soon_threadsafe(self._schedule_display_update_notification)
+
+    def _schedule_display_update_notification(self) -> None:
+        asyncio.create_task(self._notify_display_update())
+
+    async def _notify_display_update(self) -> None:
+        async with self._display_update_condition:
+            self._display_update_condition.notify_all()
 
     def _sanitize_state_configuration(self, state: Any) -> Any:
         changed = False
@@ -387,7 +465,7 @@ class ApplicationContainer:
             )
             pet_state.ensure_idle_if_expired(now_ts)
             self.render_service.set_theme(state.active_theme_id)
-            image = self.render_service.render_frame(pet_state, now_ts=now_ts)
-            self.render_service.push_frame(image)
+            self.render_service.render_frame(pet_state, now_ts=now_ts)
+            self.render_service.push_framebuffer()
         except Exception:
             logger.exception("Failed to render current pet frame after display backend change.")

@@ -33,7 +33,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "config*", "clawgotchi*"]
+include = ["app*", "config*", "clawgotchi*", "core*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

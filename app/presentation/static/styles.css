@@ -84,6 +84,10 @@ body {
   gap: 0.5rem;
 }
 
+.muted {
+  color: var(--muted);
+}
+
 .align-center {
   align-items: center;
 }
@@ -133,6 +137,34 @@ body {
   word-break: break-word;
   max-height: 320px;
   overflow: auto;
+}
+
+.display-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+
+.display-controls input[type="range"] {
+  width: 200px;
+  margin: 0;
+}
+
+.display-stage {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8f5ee;
+  padding: 0.8rem;
+  overflow: auto;
+}
+
+#display-frame {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 2px solid #1a1a1a;
+  background: #ffffff;
 }
 
 button {

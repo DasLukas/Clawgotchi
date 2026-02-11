@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -494,7 +494,5 @@ async def settings_update(request: Request, container=Depends(get_container)):
 
 @router.get("/debug/frame")
 async def debug_frame(container=Depends(get_container)) -> Response:
-    payload = container.render_service.get_last_frame_png()
-    if payload is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No frame has been rendered yet.")
+    payload = container.get_display_frame_png()
     return Response(content=payload, media_type="image/png")

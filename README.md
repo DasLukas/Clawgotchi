@@ -10,6 +10,7 @@ Clawgotchi ist ein erweiterbares Raspberry-Pi-Projekt mit FastAPI-Weboberflaeche
 - SQLite-Statuspersistenz mit Snapshots
 - Hintergrund-Worker fuer Tick-Loop und Command-Queue
 - Hardware display backends via plugins (Dummy + Waveshare ePaper 2.7" B/W)
+- Virtual Display Mirror in Web UI backed by a shared in-memory 1-bit framebuffer
 
 ## Voraussetzungen
 
@@ -275,6 +276,20 @@ python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw
 
 If `clawgotchi.service` is running, the CLI test may fail because the service already holds GPIO/SPI resources.  
 Stop the service first, or run the test with `--force`.
+
+## Virtual Display Mirror
+
+The web UI now includes a **Display** page (`/display`) that mirrors the exact framebuffer used for hardware rendering.
+
+- Shared framebuffer: `264x176`, `1-bit`
+- Hardware sinks and web mirror both consume the same framebuffer source
+- WebSocket updates on `/ws/display` with polling fallback in the browser
+
+Display API endpoints:
+
+- `GET /api/display/capabilities` -> `{ "width": 264, "height": 176, "mode": "1bit" }`
+- `GET /api/display/frame.png` -> latest framebuffer image
+- `GET /api/display/frame.meta` -> `{ "version", "updated_at_ms", "width", "height" }`
 
 ## Updating
 

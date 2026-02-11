@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <div class="split-header align-center">
+    <h2>Virtual Display Mirror</h2>
+    <p class="muted" id="display-status">Waiting for updates...</p>
+  </div>
+
+  <p class="muted">
+    Frame version: <strong id="display-version">{{ frame_meta.version }}</strong>
+    · Updated: <span id="display-updated">{{ frame_meta.updated_at_ms }}</span>
+  </p>
+
+  <div class="display-controls">
+    <label for="display-scale">Scale</label>
+    <input id="display-scale" type="range" min="1" max="4" step="1" value="2" />
+    <span id="display-scale-value">2x</span>
+  </div>
+
+  <div class="display-stage">
+    <img
+      id="display-frame"
+      src="/api/display/frame.png?v={{ frame_meta.version }}"
+      alt="Virtual display mirror"
+      width="{{ capabilities.width }}"
+      height="{{ capabilities.height }}"
+      data-frame-url="/api/display/frame.png"
+      data-meta-url="/api/display/frame.meta"
+      data-ws-url="/ws/display"
+      data-version="{{ frame_meta.version }}"
+    />
+  </div>
+</section>
+<script src="/static/display.js" defer></script>
+{% endblock %}
