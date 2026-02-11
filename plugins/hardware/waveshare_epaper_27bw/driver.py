@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 import os
 from pathlib import Path
@@ -253,17 +254,22 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         if discovered_module is not None:
             return discovered_module
 
-        for model_name in ("epd2in7_V2", "epd2in7"):
+        epaper_callable = getattr(epaper_package, "epaper", None)
+        if not callable(epaper_callable):
+            import_errors.append("epaper: missing callable 'epaper' API")
+            return None
+
+        api_kwargs = self._build_epaper_api_kwargs(epaper_callable)
+        for model_name in self._epaper_api_model_candidates():
             try:
-                if hasattr(epaper_package, "epaper"):
-                    module = epaper_package.epaper(model_name)
-                    if module is not None:
-                        self._epd_module_name = f"epaper.{model_name}"
-                        logger.info(
-                            "Loaded Waveshare module from epaper package compatibility API.",
-                            extra={"model_name": model_name},
-                        )
-                        return module
+                module = epaper_callable(model_name, **api_kwargs)
+                if module is not None:
+                    self._epd_module_name = f"epaper.{model_name}"
+                    logger.info(
+                        "Loaded Waveshare module from epaper package compatibility API.",
+                        extra={"model_name": model_name},
+                    )
+                    return module
             except Exception as exc:
                 detail = str(exc)
                 if "Failed to add edge detection" in detail:
@@ -274,8 +280,9 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
                 import_errors.append(f"epaper.epaper({model_name}): {detail}")
                 logger.debug(
                     "Failed to load model from epaper package compatibility API.",
-                        extra={"model_name": model_name, "error": str(exc)},
+                    extra={"model_name": model_name, "error": str(exc)},
                 )
+                self._release_gpio_resources()
         return None
 
     def _load_module_from_epaper_discovery(self, epaper_package: Any, import_errors: list[str]) -> Any | None:
@@ -344,6 +351,80 @@ class WaveshareEPaper27BWDriver(DisplayDriver):
         if not isinstance(width, int) or not isinstance(height, int):
             return True
         return {width, height} == {self.WIDTH, self.HEIGHT}
+
+    def _build_epaper_api_kwargs(self, epaper_callable: Any) -> dict[str, Any]:
+        parameter_names: set[str] = set()
+        has_var_kwargs = False
+        try:
+            signature = inspect.signature(epaper_callable)
+            parameter_names = set(signature.parameters)
+            has_var_kwargs = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
+            )
+        except Exception:
+            parameter_names = set()
+
+        def _supports(name: str) -> bool:
+            return has_var_kwargs or name in parameter_names
+
+        kwargs: dict[str, Any] = {}
+        pin_candidates: tuple[tuple[str, Any], ...] = (
+            ("busy", self._settings.display_gpio_busy_pin),
+            ("busy_pin", self._settings.display_gpio_busy_pin),
+            ("busy_gpio", self._settings.display_gpio_busy_pin),
+            ("gpio_busy", self._settings.display_gpio_busy_pin),
+            ("dc", self._settings.display_gpio_dc_pin),
+            ("dc_pin", self._settings.display_gpio_dc_pin),
+            ("dc_gpio", self._settings.display_gpio_dc_pin),
+            ("gpio_dc", self._settings.display_gpio_dc_pin),
+            ("rst", self._settings.display_gpio_rst_pin),
+            ("reset", self._settings.display_gpio_rst_pin),
+            ("rst_pin", self._settings.display_gpio_rst_pin),
+            ("reset_pin", self._settings.display_gpio_rst_pin),
+            ("rst_gpio", self._settings.display_gpio_rst_pin),
+            ("gpio_rst", self._settings.display_gpio_rst_pin),
+            ("cs", self._settings.display_gpio_cs_pin),
+            ("cs_pin", self._settings.display_gpio_cs_pin),
+            ("cs_gpio", self._settings.display_gpio_cs_pin),
+            ("gpio_cs", self._settings.display_gpio_cs_pin),
+            ("spi_bus", self._settings.display_spi_bus),
+            ("spi_device", self._settings.display_spi_device),
+            ("bus", self._settings.display_spi_bus),
+            ("device", self._settings.display_spi_device),
+        )
+        for key, value in pin_candidates:
+            if _supports(key):
+                kwargs[key] = value
+
+        mode_candidates: tuple[tuple[str, Any], ...] = (
+            ("gpio_mode", "BCM"),
+            ("pin_mode", "BCM"),
+            ("mode", "BCM"),
+            ("numbering", "BCM"),
+            ("use_bcm", True),
+            ("board", False),
+        )
+        for key, value in mode_candidates:
+            if _supports(key):
+                kwargs[key] = value
+
+        return kwargs
+
+    def _epaper_api_model_candidates(self) -> list[str]:
+        candidates = [
+            "epd2in7_V2",
+            "epd2in7",
+            "epd2in7v2",
+            "epd_2in7_V2",
+            "epd_2in7",
+            "2in7_V2",
+            "2in7",
+        ]
+        unique: list[str] = []
+        for candidate in candidates:
+            if candidate not in unique:
+                unique.append(candidate)
+        return unique
 
     def _release_gpio_resources(self) -> None:
         self._cleanup_gpiozero_pin_factory()
