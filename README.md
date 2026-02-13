@@ -216,6 +216,12 @@ Useful checks:
 - `python -m clawgotchi.tools.doctor --json`
 - `python -m clawgotchi.tools.display_test --backend dummy`
 
+If update reports Python compatibility issues (`requires >=3.11`), force a compatible bootstrap interpreter:
+
+```bash
+CLAW_BOOTSTRAP_PYTHON=/opt/homebrew/bin/python3.12 "$HOME/Library/Application Support/Clawgotchi/src/update.sh"
+```
+
 ## Development Workflow
 
 ### Local development setup

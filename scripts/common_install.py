@@ -149,6 +149,7 @@ def write_runtime_env_file(
     runtime_home: Path,
     repo_root: Path,
     layout: dict[str, Path],
+    bootstrap_python: Path,
     dry_run: bool = False,
 ) -> None:
     """Write runtime `.env` defaults in user-writable runtime home.
@@ -158,6 +159,7 @@ def write_runtime_env_file(
         runtime_home: Runtime home path.
         repo_root: Repository source checkout path.
         layout: Runtime layout mapping.
+        bootstrap_python: Python executable used to create/recover managed venv.
         dry_run: When true, print changes without writing.
     """
 
@@ -179,6 +181,7 @@ def write_runtime_env_file(
         f"CLAW_THEME_DIRECTORIES={runtime_themes},{repo_themes}",
         f"CLAW_CONFIG_FILE={config_file}",
         f"CLAW_DISPLAY_DEBUG_PNG_PATH={debug_png}",
+        f"CLAW_BOOTSTRAP_PYTHON={bootstrap_python.resolve()}",
     ]
     payload = "\n".join(env_lines) + "\n"
 
@@ -195,7 +198,13 @@ def write_runtime_env_file(
             pass
 
 
-def _build_unix_launcher_script(runtime_home: Path, env_file: Path, venv_python: Path, repo_root: Path) -> str:
+def _build_unix_launcher_script(
+    runtime_home: Path,
+    env_file: Path,
+    venv_python: Path,
+    repo_root: Path,
+    bootstrap_python: Path,
+) -> str:
     return "\n".join(
         [
             "#!/usr/bin/env bash",
@@ -203,6 +212,7 @@ def _build_unix_launcher_script(runtime_home: Path, env_file: Path, venv_python:
             f'export CLAW_RUNTIME_HOME="{runtime_home.resolve()}"',
             f'export CLAW_ENV_FILE="{env_file.resolve()}"',
             f'export CLAW_VENV_PATH="{venv_python.resolve().parent.parent}"',
+            f'export CLAW_BOOTSTRAP_PYTHON="{bootstrap_python.resolve()}"',
             "export PYTHONUNBUFFERED=1",
             f'exec "{venv_python.resolve()}" "{(repo_root / "main.py").resolve()}" "$@"',
             "",
@@ -210,13 +220,20 @@ def _build_unix_launcher_script(runtime_home: Path, env_file: Path, venv_python:
     )
 
 
-def _build_windows_launcher_script(runtime_home: Path, env_file: Path, venv_python: Path, repo_root: Path) -> str:
+def _build_windows_launcher_script(
+    runtime_home: Path,
+    env_file: Path,
+    venv_python: Path,
+    repo_root: Path,
+    bootstrap_python: Path,
+) -> str:
     return "\n".join(
         [
             '$ErrorActionPreference = "Stop"',
             f'$env:CLAW_RUNTIME_HOME = "{runtime_home.resolve()}"',
             f'$env:CLAW_ENV_FILE = "{env_file.resolve()}"',
             f'$env:CLAW_VENV_PATH = "{venv_python.resolve().parent.parent}"',
+            f'$env:CLAW_BOOTSTRAP_PYTHON = "{bootstrap_python.resolve()}"',
             '$env:PYTHONUNBUFFERED = "1"',
             f'& "{venv_python.resolve()}" "{(repo_root / "main.py").resolve()}" @Args',
             "",
@@ -248,6 +265,7 @@ def create_launchers(
     repo_root: Path,
     venv_python: Path,
     env_file: Path,
+    bootstrap_python: Path,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create platform launchers in runtime home, repo root, and user bin.
@@ -257,6 +275,7 @@ def create_launchers(
         repo_root: Source checkout path.
         venv_python: Virtual environment Python executable.
         env_file: Runtime env file path.
+        bootstrap_python: Python executable used for venv bootstrap/recovery.
         dry_run: When true, print actions without writing.
 
     Returns:
@@ -267,7 +286,13 @@ def create_launchers(
     runtime_bin = runtime_home / "bin"
 
     if os.name == "nt":
-        launcher_payload = _build_windows_launcher_script(runtime_home, env_file, venv_python, repo_root)
+        launcher_payload = _build_windows_launcher_script(
+            runtime_home,
+            env_file,
+            venv_python,
+            repo_root,
+            bootstrap_python,
+        )
         runtime_launcher = runtime_bin / "clawgotchi.ps1"
         repo_launcher = repo_root / "clawgotchi.ps1"
         write_launcher(runtime_launcher, launcher_payload, dry_run=dry_run)
@@ -275,7 +300,13 @@ def create_launchers(
         launchers.extend([runtime_launcher, repo_launcher])
         return launchers
 
-    launcher_payload = _build_unix_launcher_script(runtime_home, env_file, venv_python, repo_root)
+    launcher_payload = _build_unix_launcher_script(
+        runtime_home,
+        env_file,
+        venv_python,
+        repo_root,
+        bootstrap_python,
+    )
     runtime_launcher = runtime_bin / "clawgotchi"
     repo_launcher = repo_root / "clawgotchi.sh"
     write_launcher(runtime_launcher, launcher_payload, dry_run=dry_run)
@@ -371,6 +402,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime_home = get_runtime_home()
     layout = get_runtime_layout(runtime_home)
     ensure_directories(layout, dry_run=args.dry_run)
+    bootstrap_python = Path(sys.executable).resolve()
 
     venv_path = runtime_home / "venv"
     venv_python = create_or_update_venv(venv_path=venv_path, repo_root=repo_root, dry_run=args.dry_run)
@@ -380,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
         runtime_home=runtime_home,
         repo_root=repo_root,
         layout=layout,
+        bootstrap_python=bootstrap_python,
         dry_run=args.dry_run,
     )
     launchers = create_launchers(
@@ -387,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=repo_root,
         venv_python=venv_python,
         env_file=layout["env_file"],
+        bootstrap_python=bootstrap_python,
         dry_run=args.dry_run,
     )
 

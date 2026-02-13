@@ -196,6 +196,22 @@ Themes provide:
 - animation assets
 - optional stylesheet for UI branding
 
+### Pet Asset Authoring and Runtime Pipeline
+Pet visuals are implemented as theme assets. New pet art is added by creating a theme folder with a `manifest.json` and frame images under `assets/`.
+
+Authoring contract:
+- Asset root: `themes/<theme_id>/`
+- Theme metadata: `themes/<theme_id>/manifest.json`
+- Animation frame files: paths listed in `animations.<name>.frames` (usually `assets/<animation>_<index>.png`)
+- Optional shared frame reuse via relative paths (for example `../classic/assets/idle_0.png`)
+
+Runtime pipeline:
+1. `FileSystemThemeLoader` scans ordered theme roots and registers available theme manifests.
+2. `ThemeLoader` (`app/infrastructure/themes/theme_loader.py`) parses and validates `ThemeManifest`, including declared frame paths.
+3. Render services resolve the active animation and frame index from the current pet state.
+4. `PetSpriteRenderer` loads the selected frame, applies placement/scale settings, then converts to 1-bit output using threshold/dither settings.
+5. The resulting frame is written to the shared framebuffer and fanned out to web mirror and active hardware display sinks.
+
 ## API Surface Summary
 - Versioned API: `/api/v1/*`
 - Display API: `/api/display/*`
@@ -232,6 +248,7 @@ Update modes:
 - Git-sync mode (`--sync-git` or `CLWG_SYNC_GIT=1`): requires clean working tree, then fetch/pull before dependency refresh.
 - Pip self-upgrade is opt-in (`--upgrade-pip` or `CLWG_UPGRADE_PIP=1`).
 - Editable reinstall has a one-time virtualenv recreate fallback for permission/tooling recovery.
+- Update recovery uses Python >=3.11 only; interpreter can be overridden via `CLAW_BOOTSTRAP_PYTHON`.
 
 Raspberry Pi timer/service installs set `CLWG_SYNC_GIT=1` and `CLWG_FORCE_LOCAL_REPO=1` in generated update helper to keep scheduled remote sync behavior on the Pi checkout.
 

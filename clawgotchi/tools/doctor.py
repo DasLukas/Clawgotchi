@@ -54,15 +54,18 @@ def _check_python_version(min_major: int = 3, min_minor: int = 11) -> None:
 
 
 def _run_import_smoke() -> None:
-    """Perform a lightweight import smoke test for core entrypoints.
+    """Perform a lightweight import smoke test for core application modules.
 
     Raises:
         RuntimeError: If required modules cannot be imported.
     """
 
     try:
-        import main  # noqa: F401
+        # Import core container and presentation modules without relying on CWD.
         from app.container import ApplicationContainer  # noqa: F401
+        from app.presentation.web import router as web_router  # noqa: F401
+        from app.presentation.api import router as api_router  # noqa: F401
+        from app.presentation.routes_display import router as display_router  # noqa: F401
     except Exception as exc:  # pragma: no cover - explicit diagnostic path
         raise RuntimeError(f"Import smoke test failed: {exc}") from exc
 

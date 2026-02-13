@@ -8,6 +8,7 @@ BRANCH="${CLWG_BRANCH:-main}"
 SYNC_GIT="${CLWG_SYNC_GIT:-0}"
 UPGRADE_PIP="${CLWG_UPGRADE_PIP:-0}"
 FORCE_LOCAL_REPO="${CLWG_FORCE_LOCAL_REPO:-0}"
+BOOTSTRAP_PYTHON="${CLAW_BOOTSTRAP_PYTHON:-}"
 
 resolve_default_runtime_home() {
   if [[ -n "${CLAW_RUNTIME_HOME:-}" ]]; then
@@ -84,6 +85,7 @@ Environment:
   CLWG_SYNC_GIT=1 enables git sync mode.
   CLWG_UPGRADE_PIP=1 enables pip self-upgrade.
   CLWG_FORCE_LOCAL_REPO=1 disables managed workspace delegation.
+  CLAW_BOOTSTRAP_PYTHON=/path/to/python3.11 overrides the interpreter used for venv creation/recovery.
 EOF
 }
 
@@ -221,20 +223,113 @@ run_as_app() {
   if [[ "${EUID}" -eq 0 ]]; then
     su - "${APP_USER}" -c "${cmd}"
   else
-    bash -lc "${cmd}"
+    bash -c "${cmd}"
   fi
 }
 
+python_is_supported() {
+  local python_cmd="$1"
+  run_as_app "'${python_cmd}' -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'" >/dev/null 2>&1
+}
+
+resolve_python_command_path() {
+  local command_name="$1"
+  local resolved
+  if ! run_as_app "command -v '${command_name}' >/dev/null 2>&1"; then
+    return 1
+  fi
+  resolved="$(run_as_app "command -v '${command_name}'" 2>/dev/null | tail -n 1)"
+  [[ -n "${resolved}" ]] || return 1
+  printf "%s" "${resolved}"
+}
+
+select_bootstrap_python() {
+  local raw_candidates=()
+  local command_candidates=(
+    python3.13
+    python3.12
+    python3.11
+    python3
+  )
+  local explicit_candidates=(
+    /opt/homebrew/bin/python3.13
+    /opt/homebrew/bin/python3.12
+    /opt/homebrew/bin/python3.11
+    /usr/local/bin/python3.13
+    /usr/local/bin/python3.12
+    /usr/local/bin/python3.11
+  )
+  local candidate resolved base_from_venv dedupe_guard
+
+  if [[ -n "${BOOTSTRAP_PYTHON}" ]]; then
+    raw_candidates+=("${BOOTSTRAP_PYTHON}")
+  fi
+
+  if [[ -x "${VENV_PYTHON}" ]]; then
+    base_from_venv="$(
+      run_as_app "'${VENV_PYTHON}' -c \"import os,sys; print(os.path.realpath(getattr(sys, '_base_executable', sys.executable)))\"" \
+        2>/dev/null | tail -n 1
+    )"
+    if [[ -n "${base_from_venv}" ]]; then
+      raw_candidates+=("${base_from_venv}")
+    fi
+  fi
+
+  for candidate in "${explicit_candidates[@]}"; do
+    if [[ -x "${candidate}" ]]; then
+      raw_candidates+=("${candidate}")
+    fi
+  done
+
+  for candidate in "${command_candidates[@]}"; do
+    resolved="$(resolve_python_command_path "${candidate}" || true)"
+    if [[ -n "${resolved}" ]]; then
+      raw_candidates+=("${resolved}")
+    fi
+  done
+
+  dedupe_guard="|"
+  for candidate in "${raw_candidates[@]}"; do
+    if [[ ! -x "${candidate}" ]]; then
+      continue
+    fi
+    if [[ "${dedupe_guard}" == *"|${candidate}|"* ]]; then
+      continue
+    fi
+    dedupe_guard="${dedupe_guard}${candidate}|"
+    if python_is_supported "${candidate}"; then
+      BOOTSTRAP_PYTHON="${candidate}"
+      return 0
+    fi
+  done
+
+  die "Python 3.11+ is required for updates. Current detected python3 is '$(
+    run_as_app "python3 -V 2>/dev/null || true" | tail -n 1
+  )'. Install Python 3.11+ and rerun, or set CLAW_BOOTSTRAP_PYTHON to a Python 3.11+ executable."
+}
+
 ensure_venv() {
+  select_bootstrap_python
+
   if [[ ! -x "${VENV_PYTHON}" ]]; then
-    log "Virtualenv missing. Creating ${VENV_DIR}."
-    run_as_app "python3 -m venv '${VENV_DIR}'"
+    log "Virtualenv missing. Creating ${VENV_DIR} with ${BOOTSTRAP_PYTHON}."
+    run_as_app "'${BOOTSTRAP_PYTHON}' -m venv '${VENV_DIR}'"
+  fi
+
+  if ! python_is_supported "${VENV_PYTHON}"; then
+    log "Virtualenv Python is below 3.11. Recreating ${VENV_DIR} with ${BOOTSTRAP_PYTHON}."
+    run_as_app "rm -rf '${VENV_DIR}'"
+    run_as_app "'${BOOTSTRAP_PYTHON}' -m venv '${VENV_DIR}'"
   fi
 
   if ! run_as_app "'${VENV_PYTHON}' -m pip --version" >/dev/null 2>&1; then
-    log "Virtualenv tooling is broken. Recreating ${VENV_DIR}."
+    log "Virtualenv tooling is broken. Recreating ${VENV_DIR} with ${BOOTSTRAP_PYTHON}."
     run_as_app "rm -rf '${VENV_DIR}'"
-    run_as_app "python3 -m venv '${VENV_DIR}'"
+    run_as_app "'${BOOTSTRAP_PYTHON}' -m venv '${VENV_DIR}'"
+  fi
+
+  if ! python_is_supported "${VENV_PYTHON}"; then
+    die "Virtualenv Python must be >=3.11, but '${VENV_PYTHON}' is not compatible. Set CLAW_BOOTSTRAP_PYTHON to a Python 3.11+ interpreter and retry."
   fi
 }
 
@@ -256,7 +351,7 @@ install_editable_package() {
 
   log "Editable install failed. Recreating virtualenv once for self-heal."
   run_as_app "rm -rf '${VENV_DIR}'"
-  run_as_app "python3 -m venv '${VENV_DIR}'"
+  run_as_app "'${BOOTSTRAP_PYTHON}' -m venv '${VENV_DIR}'"
   if ! run_as_app "'${VENV_PYTHON}' -m pip install --upgrade wheel setuptools"; then
     log "wheel/setuptools upgrade failed after venv recreation; retrying editable install anyway."
   fi
@@ -329,6 +424,7 @@ else
 fi
 
 ensure_venv
+log "Using bootstrap Python: ${BOOTSTRAP_PYTHON}"
 log "Installing/updating Python dependencies."
 if [[ "${UPGRADE_PIP_ENABLED}" == "true" ]]; then
   run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"
