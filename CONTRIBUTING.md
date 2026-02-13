@@ -1,6 +1,6 @@
-# CONTRIBUTER Guide
+# CONTRIBUTOR Guide
 
-This guide explains how to add new pets and animations for Clawgotchi using the sprite-based theme pipeline.
+This guide explains how to create new pet assets and animations for Clawgotchi using the sprite-based theme pipeline.
 
 ## 1) Theme Folder Structure
 
@@ -46,7 +46,22 @@ Use RGBA PNG frames with transparent background:
 
 The renderer scales with nearest-neighbor and converts to 1-bit for hardware and web mirror output.
 
-## 4) Sprite Placement and Sidebar-Aware Layout
+## 4) Asset Creation Workflow
+
+Recommended workflow when creating a new pet asset pack:
+1. Design a master sprite in `128x128` or `160x160`.
+2. Export animation frames as RGBA PNG files with transparent background.
+3. Name frames using `<animation_name>_<index>.png` (for example `idle_0.png`, `idle_1.png`).
+4. Keep frame dimensions consistent within one animation sequence.
+5. Place exported files under `themes/<theme_id>/assets/`.
+6. Reference every frame in `manifest.json` under `animations.<name>.frames`.
+
+Asset path rules:
+- Frame paths in `manifest.json` are relative to the theme directory.
+- Reusing assets from another theme is supported via relative paths (for example `../classic/assets/idle_0.png`).
+- Missing frame files will fail theme loading at runtime and in tests.
+
+## 5) Sprite Placement and Sidebar-Aware Layout
 
 Clawgotchi always reserves a left sidebar in the framebuffer.
 
@@ -61,7 +76,7 @@ Placement controls:
   - `integer_only`: rounds to integer scale factors (`1x`, `2x`, ...)
   - `free`: allows fractional scale
 
-## 5) Animation Setup and FPS Guidance
+## 6) Animation Setup and FPS Guidance
 
 Use short loops and conservative FPS for monochrome displays:
 - `idle`: `0.25` to `0.5` FPS
@@ -69,7 +84,7 @@ Use short loops and conservative FPS for monochrome displays:
 
 Keep frame count low to avoid unnecessary refresh overhead.
 
-## 6) Minimal Sprite Manifest Example
+## 7) Minimal Sprite Manifest Example
 
 ```json
 {
@@ -112,7 +127,7 @@ Keep frame count low to avoid unnecessary refresh overhead.
 }
 ```
 
-## 7) Legacy Fullframe Example (Deprecated)
+## 8) Legacy Fullframe Example (Deprecated)
 
 Legacy fullframe is still supported for compatibility, but new themes should use `sprite` mode.
 
@@ -139,16 +154,22 @@ Notes:
 - Fullframe frames should match canvas dimensions exactly
 - Sidebar remains visible because rendering is clipped to preserve the left menu area
 
-## 8) Testing in Dashboard
+## 9) Testing in Dashboard
 
 1. Start Clawgotchi.
 2. Open `/dashboard`.
 3. Ensure the mirrored display updates while the pet animates.
-4. Use virtual buttons (`NEXT`, `BACK`, `OK`, `SP`) to navigate the sidebar menu.
+4. Use virtual buttons (`NEXT`, `BACK`, `CONFIRM`, `SPECIAL`) to navigate the sidebar menu.
 
 If hardware is enabled, both hardware and dashboard should show the same framebuffer output.
 
-## 9) 1-bit Quality Checklist
+Validation command for asset-related changes:
+
+```bash
+python -m pytest -q tests/test_theme_loader.py tests/test_animation_selection.py
+```
+
+## 10) 1-bit Quality Checklist
 
 To keep output clean on monochrome displays:
 - Prefer solid black/white shapes over gray gradients
@@ -156,7 +177,7 @@ To keep output clean on monochrome displays:
 - Keep edges thick enough for low-resolution readability
 - Use high-contrast sprites with minimal texture noise
 
-## 10) Architecture Doc Maintenance
+## 11) Architecture Doc Maintenance
 
 Architecture changes must update `docs/ARCHITECTURE.md` in the same commit.
 
