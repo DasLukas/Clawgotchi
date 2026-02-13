@@ -11,6 +11,7 @@ if [[ -n "${CLAW_REPO_URL:-}" ]]; then
   REPO_URL_EXPLICIT=1
 fi
 BRANCH="${CLAW_BRANCH:-${DEFAULT_BRANCH}}"
+PYTHON_CMD="${CLAW_BOOTSTRAP_PYTHON:-}"
 SOURCE_ROOT=""
 DRY_RUN=0
 SYSTEMD_REQUESTED=0
@@ -35,6 +36,9 @@ Options:
   --systemd             Request optional Raspberry Pi systemd/SPI guidance.
   --dry-run             Print actions without changing the system.
   -h, --help            Show this help message.
+
+Environment:
+  CLAW_BOOTSTRAP_PYTHON  Explicit Python interpreter for installer actions.
 EOF
 }
 
@@ -68,10 +72,55 @@ setup_git_ssh_environment() {
   fi
 }
 
-check_python_version() {
-  if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
-    die "Python 3.11+ is required. Install Python 3.11+ and rerun."
+python_meets_requirement() {
+  local candidate="$1"
+  "${candidate}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
+}
+
+resolve_python_command() {
+  local candidates=()
+  local candidate resolved
+
+  if [[ -n "${PYTHON_CMD}" ]]; then
+    candidates+=("${PYTHON_CMD}")
   fi
+
+  case "$(uname -s | tr '[:upper:]' '[:lower:]')" in
+    darwin)
+      candidates+=(
+        "/opt/homebrew/bin/python3.13"
+        "/opt/homebrew/bin/python3.12"
+        "/opt/homebrew/bin/python3.11"
+        "/usr/local/bin/python3.13"
+        "/usr/local/bin/python3.12"
+        "/usr/local/bin/python3.11"
+      )
+      ;;
+  esac
+
+  candidates+=("python3.13" "python3.12" "python3.11" "python3")
+
+  for candidate in "${candidates[@]}"; do
+    if [[ "${candidate}" == /* ]]; then
+      if [[ -x "${candidate}" ]] && python_meets_requirement "${candidate}"; then
+        PYTHON_CMD="${candidate}"
+        return 0
+      fi
+      continue
+    fi
+
+    if ! command -v "${candidate}" >/dev/null 2>&1; then
+      continue
+    fi
+
+    resolved="$(command -v "${candidate}")"
+    if [[ -x "${resolved}" ]] && python_meets_requirement "${resolved}"; then
+      PYTHON_CMD="${resolved}"
+      return 0
+    fi
+  done
+
+  die "Python 3.11+ is required. On macOS install with 'brew install python@3.12', then rerun. You can also set CLAW_BOOTSTRAP_PYTHON=/opt/homebrew/bin/python3.12."
 }
 
 is_raspberry_pi() {
@@ -232,12 +281,10 @@ main() {
   uname_s="$(uname -s | tr '[:upper:]' '[:lower:]')"
   if [[ "${uname_s}" == "darwin" ]]; then
     require_command "git" "Install with: brew install git"
-    require_command "python3" "Install with: brew install python@3.11"
   else
     require_command "git" "Install using your package manager (for example: sudo apt install git)."
-    require_command "python3" "Install Python 3.11+ using your package manager."
   fi
-  check_python_version
+  resolve_python_command
   setup_git_ssh_environment
 
   local source_root
@@ -267,7 +314,7 @@ main() {
     install_args+=("--systemd")
   fi
 
-  run python3 "${install_args[@]}"
+  run "${PYTHON_CMD}" "${install_args[@]}"
   offer_pi_systemd_path "${source_root}"
 }
 
