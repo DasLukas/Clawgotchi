@@ -251,3 +251,4 @@ Bootstrap repository sync behavior:
   - `install.sh`
   - `update.sh`
 - 2026-02-13: Reworked install/update behavior for dedicated per-user host workspace paths and managed workspace defaults, including update delegation, self-healing venv reinstall, and bootstrap auto re-clone for broken managed checkouts.
+- 2026-02-13: Removed the three decorative dots below the dashboard display by deleting the `tamagotchi-buttons` markup from `app/presentation/templates/dashboard.html`. This is presentation-only and does not affect module boundaries, APIs, data flow, persistence, or plugin architecture.
