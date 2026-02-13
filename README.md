@@ -57,7 +57,7 @@ Bootstrap installer flow (`scripts/install_bootstrap.sh` / `scripts/install_boot
 4. Installs dependencies into the virtualenv (`pip install -e <repo>`).
 5. Creates runtime directories and runtime `.env` in runtime home.
 6. Creates launchers:
-   - Unix: runtime `bin/clawgotchi`, repo `./clawgotchi`, and `~/.local/bin/clawgotchi`
+   - Unix: runtime `bin/clawgotchi`, repo `./clawgotchi.sh`, and `~/.local/bin/clawgotchi`
    - Windows: runtime `bin/clawgotchi.ps1` and repo `./clawgotchi.ps1`
 7. Runs smoke diagnostics via doctor (`python -m clawgotchi.tools.doctor --smoke --check-startup`).
 

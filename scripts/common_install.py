@@ -277,7 +277,7 @@ def create_launchers(
 
     launcher_payload = _build_unix_launcher_script(runtime_home, env_file, venv_python, repo_root)
     runtime_launcher = runtime_bin / "clawgotchi"
-    repo_launcher = repo_root / "clawgotchi"
+    repo_launcher = repo_root / "clawgotchi.sh"
     write_launcher(runtime_launcher, launcher_payload, dry_run=dry_run)
     write_launcher(repo_launcher, launcher_payload, dry_run=dry_run)
     launchers.extend([runtime_launcher, repo_launcher])

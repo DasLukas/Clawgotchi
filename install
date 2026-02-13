@@ -2,5 +2,12 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_COMMON_INSTALL="${SCRIPT_DIR}/scripts/common_install.py"
 BOOTSTRAP_URL="${CLAW_INSTALL_BOOTSTRAP_URL:-https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/scripts/install_bootstrap.sh}"
+
+if [[ -f "${LOCAL_COMMON_INSTALL}" ]]; then
+  exec python3 "${LOCAL_COMMON_INSTALL}" --repo-root "${SCRIPT_DIR}" "$@"
+fi
+
 curl -fsSL "${BOOTSTRAP_URL}" | bash -s -- "$@"
