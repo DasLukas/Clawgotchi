@@ -147,8 +147,7 @@ setup_git_ssh_environment() {
 
 run_desktop_update() {
   local source_root bootstrap_script common_install_script bootstrap_python
-  local repo_url_arg=()
-  local branch_arg=()
+  local -a bootstrap_args
 
   source_root="${RUNTIME_HOME}/src"
   if is_true "${FORCE_LOCAL_REPO}"; then
@@ -170,15 +169,16 @@ run_desktop_update() {
     fi
     [[ -x "${bootstrap_script}" ]] || die "Bootstrap installer not found: ${bootstrap_script}"
 
+    bootstrap_args=(--source-root "${source_root}")
     if [[ -n "${CLAW_REPO_URL:-}" ]]; then
-      repo_url_arg=(--repo-url "${CLAW_REPO_URL}")
+      bootstrap_args+=(--repo-url "${CLAW_REPO_URL}")
     fi
     if [[ -n "${CLAW_BRANCH:-}" ]]; then
-      branch_arg=(--branch "${CLAW_BRANCH}")
+      bootstrap_args+=(--branch "${CLAW_BRANCH}")
     fi
 
     log "Desktop update via bootstrap: ${source_root}"
-    bash "${bootstrap_script}" --source-root "${source_root}" "${repo_url_arg[@]}" "${branch_arg[@]}"
+    bash "${bootstrap_script}" "${bootstrap_args[@]}"
     return 0
   fi
 

@@ -269,4 +269,5 @@ Bootstrap repository sync behavior:
 - `update.sh`
 - 2026-02-13: Reworked install/update behavior for dedicated per-user host workspace paths and managed workspace defaults, including update delegation, self-healing venv reinstall, and bootstrap auto re-clone for broken managed checkouts.
 - 2026-02-13: Simplified desktop updates to a bootstrap-driven managed workflow, preserved private SSH remotes by default, and added explicit SSH auth environment hooks (`CLAW_GIT_SSH_COMMAND` / `CLAW_GIT_SSH_KEY`).
+- 2026-02-13: Hardened installer/update shell behavior for stdin execution and strict-mode array handling (`set -u`), and improved Python interpreter resolution on macOS bootstrap installs.
 - 2026-02-13: Removed the three decorative dots below the dashboard display by deleting the `tamagotchi-buttons` markup from `app/presentation/templates/dashboard.html`. This is presentation-only and does not affect module boundaries, APIs, data flow, persistence, or plugin architecture.
