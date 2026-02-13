@@ -94,36 +94,78 @@ function Resolve-SourceRoot {
 function Sync-Repository {
   param([string]$RepoRoot)
 
+  function Backup-SourceRoot {
+    param(
+      [string]$TargetRoot,
+      [string]$Reason
+    )
+
+    $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+    $backupRoot = "$TargetRoot.backup.$timestamp"
+    Write-Log "Repository sync warning ($Reason). Moving current checkout to $backupRoot"
+    if ($DryRun) {
+      Write-Log "DRY-RUN Move-Item -Path `"$TargetRoot`" -Destination `"$backupRoot`""
+      return
+    }
+    Move-Item -Path $TargetRoot -Destination $backupRoot
+  }
+
+  function Clone-Repository {
+    param([string]$TargetRoot)
+
+    $parentDir = Split-Path -Path $TargetRoot -Parent
+    if ($DryRun) {
+      Write-Log "DRY-RUN New-Item -ItemType Directory -Force -Path `"$parentDir`""
+    } else {
+      New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+    }
+    Write-Log "Cloning repository into $TargetRoot"
+    Invoke-ExternalCommand -Command @("git", "clone", "--branch", $Branch, "--single-branch", $RepoUrl, $TargetRoot) -Description "Clone repository"
+  }
+
   $gitDir = Join-Path $RepoRoot ".git"
   if (Test-Path $gitDir) {
     Write-Log "Updating existing source checkout in $RepoRoot"
-    Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "remote", "set-url", "origin", $RepoUrl) -Description "Set origin URL"
-    Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "fetch", "--prune", "origin") -Description "Fetch repository"
-    Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "checkout", $Branch) -Description "Checkout branch"
-    Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "pull", "--ff-only", "origin", $Branch) -Description "Pull latest branch"
+    $updateSucceeded = $true
+    try {
+      Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "remote", "set-url", "origin", $RepoUrl) -Description "Set origin URL"
+      Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "fetch", "--prune", "origin") -Description "Fetch repository"
+      Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "checkout", $Branch) -Description "Checkout branch"
+      Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "pull", "--ff-only", "origin", $Branch) -Description "Pull latest branch"
+    } catch {
+      $updateSucceeded = $false
+      Write-Log "Git update failed in managed workspace, performing clean re-clone."
+    }
+
+    if ($updateSucceeded) {
+      return
+    }
+
+    Backup-SourceRoot -TargetRoot $RepoRoot -Reason "git update failed"
+    Clone-Repository -TargetRoot $RepoRoot
     return
   }
 
-  if ((Test-Path $RepoRoot) -and ((Get-ChildItem -Path $RepoRoot -Force | Measure-Object).Count -gt 0)) {
-    Fail "Source root exists and is not an empty git checkout: $RepoRoot"
+  if ((Test-Path $RepoRoot) -and (-not (Test-Path $RepoRoot -PathType Container))) {
+    Fail "Source root exists and is not a directory: $RepoRoot"
   }
 
-  $parentDir = Split-Path -Path $RepoRoot -Parent
-  if ($DryRun) {
-    Write-Log "DRY-RUN New-Item -ItemType Directory -Force -Path `"$parentDir`""
-  } else {
-    New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+  if ((Test-Path $RepoRoot) -and ((Get-ChildItem -Path $RepoRoot -Force | Measure-Object).Count -gt 0)) {
+    Backup-SourceRoot -TargetRoot $RepoRoot -Reason "non-git directory found"
   }
-  Write-Log "Cloning repository into $RepoRoot"
-  Invoke-ExternalCommand -Command @("git", "clone", "--branch", $Branch, "--single-branch", $RepoUrl, $RepoRoot) -Description "Clone repository"
+
+  Clone-Repository -TargetRoot $RepoRoot
 }
 
 function Run-CommonInstall {
   param([string]$RepoRoot)
 
   $commonInstall = Join-Path $RepoRoot "scripts\common_install.py"
-  if (-not (Test-Path $commonInstall)) {
+  if ((-not (Test-Path $commonInstall)) -and (-not $DryRun)) {
     Fail "Missing installer helper: $commonInstall"
+  }
+  if ((-not (Test-Path $commonInstall)) -and $DryRun) {
+    Write-Log "DRY-RUN skipping installer helper existence check: $commonInstall"
   }
 
   $argsList = @($commonInstall, "--repo-root", $RepoRoot, "--repo-url", $RepoUrl)

@@ -98,35 +98,75 @@ parse_args() {
 }
 
 resolve_source_root() {
+  local runtime_home=""
   if [[ -n "${SOURCE_ROOT}" ]]; then
     printf "%s" "${SOURCE_ROOT}"
     return 0
   fi
 
-  local xdg_data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
-  printf "%s" "${xdg_data_home}/clawgotchi/src"
+  case "$(uname -s | tr '[:upper:]' '[:lower:]')" in
+    darwin)
+      runtime_home="${HOME}/Library/Application Support/Clawgotchi"
+      ;;
+    *)
+      runtime_home="${XDG_DATA_HOME:-${HOME}/.local/share}/clawgotchi"
+      ;;
+  esac
+  printf "%s" "${runtime_home}/src"
 }
 
 sync_repository() {
   local source_root="$1"
+
+  backup_source_root() {
+    local target_root="$1"
+    local reason="$2"
+    local timestamp backup_root
+    timestamp="$(date +"%Y%m%d%H%M%S")"
+    backup_root="${target_root}.backup.${timestamp}"
+    log "Repository sync warning (${reason}). Moving current checkout to ${backup_root}"
+    run mv "${target_root}" "${backup_root}"
+  }
+
+  clone_checkout() {
+    local target_root="$1"
+    local parent_dir
+    parent_dir="$(dirname "${target_root}")"
+    run mkdir -p "${parent_dir}"
+    log "Cloning repository into ${target_root}"
+    run git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${target_root}"
+  }
+
+  update_checkout() {
+    local target_root="$1"
+    if run git -C "${target_root}" remote set-url origin "${REPO_URL}" \
+      && run git -C "${target_root}" fetch --prune origin \
+      && run git -C "${target_root}" checkout "${BRANCH}" \
+      && run git -C "${target_root}" pull --ff-only origin "${BRANCH}"; then
+      return 0
+    fi
+    return 1
+  }
+
   if [[ -d "${source_root}/.git" ]]; then
     log "Updating existing source checkout in ${source_root}"
-    run git -C "${source_root}" remote set-url origin "${REPO_URL}"
-    run git -C "${source_root}" fetch --prune origin
-    run git -C "${source_root}" checkout "${BRANCH}"
-    run git -C "${source_root}" pull --ff-only origin "${BRANCH}"
+    if update_checkout "${source_root}"; then
+      return 0
+    fi
+    backup_source_root "${source_root}" "git update failed"
+    clone_checkout "${source_root}"
     return 0
   fi
 
-  if [[ -e "${source_root}" && -n "$(ls -A "${source_root}" 2>/dev/null || true)" ]]; then
-    die "Source root exists and is not an empty git checkout: ${source_root}"
+  if [[ -e "${source_root}" && ! -d "${source_root}" ]]; then
+    die "Source root exists and is not a directory: ${source_root}"
   fi
 
-  local parent_dir
-  parent_dir="$(dirname "${source_root}")"
-  run mkdir -p "${parent_dir}"
-  log "Cloning repository into ${source_root}"
-  run git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${source_root}"
+  if [[ -d "${source_root}" && -n "$(ls -A "${source_root}" 2>/dev/null || true)" ]]; then
+    backup_source_root "${source_root}" "non-git directory found"
+  fi
+
+  clone_checkout "${source_root}"
 }
 
 offer_pi_systemd_path() {
@@ -185,7 +225,13 @@ main() {
   sync_repository "${source_root}"
 
   local common_install_script="${source_root}/scripts/common_install.py"
-  [[ -f "${common_install_script}" ]] || die "Missing installer helper: ${common_install_script}"
+  if [[ ! -f "${common_install_script}" ]]; then
+    if [[ "${DRY_RUN}" == "1" ]]; then
+      log "DRY-RUN skipping installer helper existence check: ${common_install_script}"
+    else
+      die "Missing installer helper: ${common_install_script}"
+    fi
+  fi
 
   local install_args=(
     "${common_install_script}"

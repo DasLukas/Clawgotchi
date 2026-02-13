@@ -27,15 +27,35 @@ Runtime layout:
 
 Built-in repository plugins/themes remain available as read-only fallback roots. Runtime roots take precedence.
 
+## Program Workspace (Best-Practice Host Location)
+
+The installer creates and maintains a dedicated per-user workspace for the application:
+
+- macOS: `~/Library/Application Support/Clawgotchi`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/clawgotchi`
+- Windows: `%LOCALAPPDATA%\Clawgotchi`
+
+Source checkout location:
+
+- macOS: `~/Library/Application Support/Clawgotchi/src`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/clawgotchi/src`
+- Windows: `%LOCALAPPDATA%\Clawgotchi\src`
+
 ## Setup Instructions
 
-### One-liner Install (macOS/Linux)
+### Install on macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | bash
 ```
 
-### One-liner Install (Windows PowerShell)
+### Install on Linux (desktop/server without systemd service)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | bash
+```
+
+### Install on Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install.ps1 | iex
@@ -47,19 +67,29 @@ irm https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install.ps1 | iex
 python -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/scripts/print_install_command.py').read())"
 ```
 
+### Install from an already cloned local repository
+
+```bash
+cd /path/to/Clawgotchi
+bash ./install
+```
+
+This command still installs into the dedicated workspace (`.../Clawgotchi/src`) and does not run from your current development folder.
+
 ## Installation Steps (what bootstrap does)
 
 Bootstrap installer flow (`scripts/install_bootstrap.sh` / `scripts/install_bootstrap.ps1` + `scripts/common_install.py`):
 
 1. Verifies required tools (`git`, Python 3.11+).
-2. Clones or updates source checkout (`~/.local/share/clawgotchi/src` on Unix-like systems, `%LOCALAPPDATA%\Clawgotchi\src` on Windows).
-3. Creates/updates runtime virtualenv in runtime home (`venv`).
-4. Installs dependencies into the virtualenv (`pip install -e <repo>`).
-5. Creates runtime directories and runtime `.env` in runtime home.
-6. Creates launchers:
+2. Clones or updates source checkout in the platform workspace (`~/Library/Application Support/Clawgotchi/src`, `${XDG_DATA_HOME:-~/.local/share}/clawgotchi/src`, `%LOCALAPPDATA%\Clawgotchi\src`).
+3. If the managed source checkout is broken/non-git, it is moved to a timestamped backup directory and re-cloned cleanly.
+4. Creates/updates runtime virtualenv in runtime home (`venv`).
+5. Installs dependencies into the virtualenv (`pip install -e <repo>`).
+6. Creates runtime directories and runtime `.env` in runtime home.
+7. Creates launchers:
    - Unix: runtime `bin/clawgotchi`, repo `./clawgotchi.sh`, and `~/.local/bin/clawgotchi`
    - Windows: runtime `bin/clawgotchi.ps1` and repo `./clawgotchi.ps1`
-7. Runs smoke diagnostics via doctor (`python -m clawgotchi.tools.doctor --smoke --check-startup`).
+8. Runs smoke diagnostics via doctor (`python -m clawgotchi.tools.doctor --smoke --check-startup`).
 
 ### Dry-run
 
@@ -86,11 +116,61 @@ Then open:
 
 - `http://localhost:8000/`
 
-## Reinstall / Update
+## Update Workflow (Simplified Git Handling)
 
 The installer is idempotent. Re-run the same one-liner to update source + dependencies safely.
 
-For repository-local updates, `update.sh` remains available and now supports runtime-venv resolution via `CLAW_VENV_PATH` / runtime home fallback.
+`update.sh` now defaults to **managed workspace update mode**:
+
+- refreshes virtualenv tooling
+- reinstalls the managed checkout (`pip install -e <runtime_home>/src`)
+- delegates automatically to the managed workspace when launched from another clone
+- does **not** run `git fetch/pull` unless explicitly requested
+- does **not** force a pip self-upgrade unless explicitly requested
+- retries once with virtualenv recreation if editable install fails (permission/tooling self-heal)
+
+This avoids update failures caused by local branch state, dirty working trees, or incomplete fetch objects.
+
+### Update on macOS/Linux desktop installs
+
+Recommended:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | bash
+```
+
+If you are in another local checkout, `./update.sh` delegates to the managed workspace automatically.
+
+If you explicitly want to update the current development checkout:
+
+```bash
+cd /path/to/Clawgotchi
+./update.sh --local-repo
+```
+
+If you explicitly want a git pull in managed mode:
+
+```bash
+./update.sh --sync-git
+```
+
+Managed mode is default to keep application updates separated from development repositories.
+
+If you also want to upgrade pip during update:
+
+```bash
+./update.sh --sync-git --upgrade-pip
+```
+
+### Update on Windows installs
+
+```powershell
+irm https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install.ps1 | iex
+```
+
+### Update on Raspberry Pi service/timer installs
+
+The generated systemd update helper runs `update.sh` in git-sync mode (`CLWG_SYNC_GIT=1`) with local-checkout pinning (`CLWG_FORCE_LOCAL_REPO=1`) so nightly updates continue to pull from `origin/main` on the Pi checkout.
 
 ## Linux Service Integration (Optional systemd path)
 
@@ -145,7 +225,7 @@ git clone https://github.com/DasLukas/Clawgotchi.git
 cd Clawgotchi
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+python -m pip install -e ".[dev]"
 python main.py
 ```
 

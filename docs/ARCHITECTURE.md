@@ -152,6 +152,13 @@ Operational constraints:
 - Tests must run without physical hardware.
 - Hardware-specific imports must remain lazy inside hardware adapters/plugins.
 
+Program workspace defaults:
+- macOS: `~/Library/Application Support/Clawgotchi`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/clawgotchi`
+- Windows: `%LOCALAPPDATA%\Clawgotchi`
+
+Workspace structure includes runtime data plus source checkout (`.../src`).
+
 ## Plugin and Extension Architecture
 
 ### Plugin Discovery
@@ -207,6 +214,31 @@ Themes provide:
 - Presentation layer does not mutate domain directly; all state changes go through services.
 - Infrastructure adapters must not leak persistence/framework concerns into domain models.
 
+## Installation and Update Scripts
+
+Install entrypoints:
+- `install` (Unix-like shells)
+- `install.ps1` (PowerShell)
+- `scripts/install_bootstrap.sh`
+- `scripts/install_bootstrap.ps1`
+- shared logic: `scripts/common_install.py`
+
+Update entrypoint:
+- `update.sh`
+
+Update modes:
+- Managed workspace mode (default): delegates to `<runtime_home>/src` when available, refreshes virtualenv, and reinstalls editable package without git fetch/pull.
+- Local checkout mode (`--local-repo` or `CLWG_FORCE_LOCAL_REPO=1`): runs update in the current checkout for development workflows.
+- Git-sync mode (`--sync-git` or `CLWG_SYNC_GIT=1`): requires clean working tree, then fetch/pull before dependency refresh.
+- Pip self-upgrade is opt-in (`--upgrade-pip` or `CLWG_UPGRADE_PIP=1`).
+- Editable reinstall has a one-time virtualenv recreate fallback for permission/tooling recovery.
+
+Raspberry Pi timer/service installs set `CLWG_SYNC_GIT=1` and `CLWG_FORCE_LOCAL_REPO=1` in generated update helper to keep scheduled remote sync behavior on the Pi checkout.
+
+Bootstrap repository sync behavior:
+- Managed source update failures trigger automatic backup (`<src>.backup.<timestamp>`) and clean re-clone.
+- Non-git managed source directories are also backed up and replaced.
+
 ## 16. Architecture-Relevant Path Scope and Change Notes
 - Architecture-relevant paths for commit checks:
   - `app/`
@@ -218,4 +250,4 @@ Themes provide:
   - `main.py`
   - `install.sh`
   - `update.sh`
-- 2026-02-13: Updated dashboard styling in `app/presentation/static/styles.css` to remove the decorative yellow shell block while keeping the centered display card and existing UI flow unchanged. This change does not alter module boundaries, APIs, data flow, persistence, or plugin architecture.
+- 2026-02-13: Reworked install/update behavior for dedicated per-user host workspace paths and managed workspace defaults, including update delegation, self-healing venv reinstall, and bootstrap auto re-clone for broken managed checkouts.

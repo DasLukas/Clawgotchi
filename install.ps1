@@ -5,7 +5,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$localBootstrap = Join-Path $scriptDir "scripts\install_bootstrap.ps1"
 $localCommonInstall = Join-Path $scriptDir "scripts\common_install.py"
+
+if (Test-Path $localBootstrap) {
+  & $localBootstrap @Args
+  exit $LASTEXITCODE
+}
 
 if (Test-Path $localCommonInstall) {
   if (Get-Command py -ErrorAction SilentlyContinue) {

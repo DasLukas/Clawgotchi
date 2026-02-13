@@ -5,6 +5,10 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE="${CLWG_REMOTE:-origin}"
 REMOTE_URL="${CLWG_REMOTE_URL:-}"
 BRANCH="${CLWG_BRANCH:-main}"
+SYNC_GIT="${CLWG_SYNC_GIT:-0}"
+UPGRADE_PIP="${CLWG_UPGRADE_PIP:-0}"
+FORCE_LOCAL_REPO="${CLWG_FORCE_LOCAL_REPO:-0}"
+
 resolve_default_runtime_home() {
   if [[ -n "${CLAW_RUNTIME_HOME:-}" ]]; then
     printf "%s" "${CLAW_RUNTIME_HOME}"
@@ -21,15 +25,134 @@ resolve_default_runtime_home() {
 }
 
 RUNTIME_HOME="$(resolve_default_runtime_home)"
-VENV_DIR="${CLAW_VENV_PATH:-${PROJECT_ROOT}/.venv}"
-if [[ ! -x "${VENV_DIR}/bin/python" && -x "${RUNTIME_HOME}/venv/bin/python" ]]; then
-  VENV_DIR="${RUNTIME_HOME}/venv"
-fi
-if [[ -x "${VENV_DIR}" ]]; then
-  VENV_PYTHON="${VENV_DIR}"
-else
+
+is_true() {
+  local value="${1:-}"
+  local lowered
+  lowered="$(printf "%s" "${value}" | tr '[:upper:]' '[:lower:]')"
+  case "${lowered}" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+normalize_path() {
+  local path_value="$1"
+  python3 -c 'import os,sys; print(os.path.realpath(os.path.expanduser(sys.argv[1])))' "${path_value}"
+}
+
+maybe_delegate_to_managed_source() {
+  local current_root managed_root managed_update_script
+  current_root="$(normalize_path "${PROJECT_ROOT}")"
+  managed_root="$(normalize_path "${RUNTIME_HOME}/src")"
+  managed_update_script="${managed_root}/update.sh"
+
+  if is_true "${FORCE_LOCAL_REPO}"; then
+    log "Local repository mode enabled. Updating current checkout: ${current_root}"
+    return 0
+  fi
+
+  if [[ "${current_root}" == "${managed_root}" ]]; then
+    return 0
+  fi
+
+  if [[ -x "${managed_update_script}" ]]; then
+    log "Delegating update to managed workspace checkout: ${managed_root}"
+    exec bash "${managed_update_script}" "$@"
+  fi
+
+  log "Managed workspace checkout not found at ${managed_root}; updating current checkout instead."
+}
+
+print_usage() {
+  cat <<'EOF'
+Usage: ./update.sh [--sync-git|--no-sync-git] [--upgrade-pip|--no-upgrade-pip] [--local-repo|--managed-repo]
+
+Modes:
+  --no-sync-git (default): Refresh virtualenv + local package install only.
+  --sync-git:              Validate clean repo, fetch/pull from configured remote, then refresh dependencies.
+  --no-upgrade-pip (default): Keep current pip version.
+  --upgrade-pip:             Upgrade pip before reinstall.
+  --managed-repo (default): Delegate updates to managed workspace checkout (<runtime_home>/src) when available.
+  --local-repo:             Force update in current checkout (development mode).
+
+Environment:
+  CLWG_SYNC_GIT=1 enables git sync mode.
+  CLWG_UPGRADE_PIP=1 enables pip self-upgrade.
+  CLWG_FORCE_LOCAL_REPO=1 disables managed workspace delegation.
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --sync-git)
+        SYNC_GIT="1"
+        shift
+        ;;
+      --no-sync-git|--local-only)
+        SYNC_GIT="0"
+        shift
+        ;;
+      --upgrade-pip)
+        UPGRADE_PIP="1"
+        shift
+        ;;
+      --no-upgrade-pip)
+        UPGRADE_PIP="0"
+        shift
+        ;;
+      --local-repo)
+        FORCE_LOCAL_REPO="1"
+        shift
+        ;;
+      --managed-repo)
+        FORCE_LOCAL_REPO="0"
+        shift
+        ;;
+      -h|--help)
+        print_usage
+        exit 0
+        ;;
+      *)
+        die "Unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+resolve_venv_paths() {
+  local requested_path="${CLAW_VENV_PATH:-}"
+
+  if [[ -n "${requested_path}" ]]; then
+    if [[ -f "${requested_path}" && -x "${requested_path}" ]]; then
+      VENV_PYTHON="${requested_path}"
+      VENV_DIR="$(cd "$(dirname "${requested_path}")/.." && pwd -P)"
+      return 0
+    fi
+    VENV_DIR="${requested_path}"
+  else
+    if [[ -x "${RUNTIME_HOME}/venv/bin/python" ]]; then
+      VENV_DIR="${RUNTIME_HOME}/venv"
+    else
+      VENV_DIR="${PROJECT_ROOT}/.venv"
+    fi
+  fi
+
+  if [[ ! -x "${VENV_DIR}/bin/python" && -x "${PROJECT_ROOT}/.venv/bin/python" ]]; then
+    VENV_DIR="${PROJECT_ROOT}/.venv"
+  fi
+
   VENV_PYTHON="${VENV_DIR}/bin/python"
-fi
+}
+
+VENV_DIR=""
+VENV_PYTHON=""
+
 SERVICE_NAME="${CLWG_SERVICE_NAME:-clawgotchi.service}"
 APP_USER="${CLWG_USER:-clawgotchi}"
 STATUS_FILE="${CLWG_UPDATE_STATUS_FILE:-/tmp/clawgotchi-update-status.env}"
@@ -115,6 +238,34 @@ ensure_venv() {
   fi
 }
 
+install_editable_package() {
+  local editable_install_cmd="'${VENV_PYTHON}' -m pip install --no-build-isolation -e '${PROJECT_ROOT}'"
+
+  if run_as_app "${editable_install_cmd}"; then
+    return 0
+  fi
+
+  log "Editable install failed. Trying pip self-upgrade for editable compatibility."
+  if run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"; then
+    if run_as_app "${editable_install_cmd}"; then
+      return 0
+    fi
+  else
+    log "Pip self-upgrade fallback failed. Continuing with virtualenv recreation."
+  fi
+
+  log "Editable install failed. Recreating virtualenv once for self-heal."
+  run_as_app "rm -rf '${VENV_DIR}'"
+  run_as_app "python3 -m venv '${VENV_DIR}'"
+  if ! run_as_app "'${VENV_PYTHON}' -m pip install --upgrade wheel setuptools"; then
+    log "wheel/setuptools upgrade failed after venv recreation; retrying editable install anyway."
+  fi
+  if [[ "${UPGRADE_PIP_ENABLED}" == "true" ]]; then
+    run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"
+  fi
+  run_as_app "${editable_install_cmd}"
+}
+
 is_reboot_marker_present() {
   [[ -f "/run/reboot-required" || -f "/var/run/reboot-required" ]]
 }
@@ -126,9 +277,17 @@ service_exists() {
   systemctl show --property=Id --value "${SERVICE_NAME}" >/dev/null 2>&1
 }
 
-if [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
-  die "No Git repository found at ${PROJECT_ROOT}."
+parse_args "$@"
+maybe_delegate_to_managed_source "$@"
+SYNC_GIT_ENABLED="false"
+if is_true "${SYNC_GIT}"; then
+  SYNC_GIT_ENABLED="true"
 fi
+UPGRADE_PIP_ENABLED="false"
+if is_true "${UPGRADE_PIP}"; then
+  UPGRADE_PIP_ENABLED="true"
+fi
+resolve_venv_paths
 
 if [[ "${EUID}" -eq 0 ]]; then
   if ! id -u "${APP_USER}" >/dev/null 2>&1; then
@@ -137,30 +296,46 @@ if [[ "${EUID}" -eq 0 ]]; then
 fi
 
 write_status "running" "Update started." "0"
+log "Using virtual environment: ${VENV_DIR}"
+log "Using Python executable: ${VENV_PYTHON}"
 
 had_reboot_marker_before="false"
 if is_reboot_marker_present; then
   had_reboot_marker_before="true"
 fi
 
-if ! run_git diff --quiet || ! run_git diff --cached --quiet; then
-  die "Local changes detected. Commit/stash before running update."
-fi
+if [[ "${SYNC_GIT_ENABLED}" == "true" ]]; then
+  if [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
+    die "Git sync requested, but no Git repository exists at ${PROJECT_ROOT}."
+  fi
 
-if [[ -n "${REMOTE_URL}" ]]; then
-  log "Ensuring git remote '${REMOTE}' points to configured URL."
-  run_git remote set-url "${REMOTE}" "${REMOTE_URL}"
-fi
+  if ! run_git diff --quiet || ! run_git diff --cached --quiet; then
+    die "Git sync mode requires a clean working tree. Commit/stash changes first, or run without --sync-git."
+  fi
 
-log "Fetching updates from ${REMOTE}/${BRANCH}."
-run_git fetch "${REMOTE}"
-run_git checkout "${BRANCH}"
-run_git pull --ff-only "${REMOTE}" "${BRANCH}"
+  if [[ -n "${REMOTE_URL}" ]]; then
+    log "Ensuring git remote '${REMOTE}' points to configured URL."
+    run_git remote set-url "${REMOTE}" "${REMOTE_URL}"
+  fi
+
+  log "Fetching updates from ${REMOTE}/${BRANCH}."
+  if ! run_git fetch "${REMOTE}"; then
+    die "Git fetch failed. Try running local-only update mode (default) and repair repository history separately."
+  fi
+  run_git checkout "${BRANCH}"
+  run_git pull --ff-only "${REMOTE}" "${BRANCH}"
+else
+  log "Git sync disabled. Updating environment from selected checkout: ${PROJECT_ROOT}"
+fi
 
 ensure_venv
 log "Installing/updating Python dependencies."
-run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"
-run_as_app "'${VENV_PYTHON}' -m pip install -e '${PROJECT_ROOT}'"
+if [[ "${UPGRADE_PIP_ENABLED}" == "true" ]]; then
+  run_as_app "'${VENV_PYTHON}' -m pip install --upgrade pip"
+else
+  log "Skipping pip self-upgrade (default). Use --upgrade-pip to enable."
+fi
+install_editable_package
 
 if service_exists; then
   if [[ "${EUID}" -eq 0 ]]; then

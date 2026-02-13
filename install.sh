@@ -575,6 +575,8 @@ export CLWG_USER="${SELECTED_USER}"
 export CLWG_REMOTE="origin"
 export CLWG_BRANCH="main"
 export CLWG_REMOTE_URL="${CLWG_GIT_SSH_URL}"
+export CLWG_SYNC_GIT="1"
+export CLWG_FORCE_LOCAL_REPO="1"
 export CLWG_SERVICE_NAME="clawgotchi.service"
 export CLWG_UPDATE_STATUS_FILE="/tmp/clawgotchi-update-status.env"
 
