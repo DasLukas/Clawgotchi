@@ -853,21 +853,15 @@ th {
 
 .tamagotchi-shell {
   width: min(560px, 100%);
-  aspect-ratio: 5 / 6;
-  border-radius: 44% 44% 38% 38% / 36% 36% 44% 44%;
   position: relative;
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto auto;
   justify-items: center;
-  align-content: center;
-  padding: clamp(1.2rem, 4vw, 2rem) clamp(1rem, 3vw, 1.6rem);
-  background:
-    radial-gradient(circle at 50% 14%, rgba(255, 255, 255, 0.32), transparent 44%),
-    linear-gradient(160deg, #f7e49e 0%, #e9bf66 50%, #d89245 100%);
-  box-shadow:
-    inset 0 16px 24px rgba(255, 255, 255, 0.22),
-    inset 0 -14px 24px rgba(93, 53, 16, 0.24),
-    0 22px 40px rgba(0, 0, 0, 0.35);
+  align-content: start;
+  padding: 0;
+  gap: clamp(0.8rem, 2.2vw, 1.2rem);
+  background: transparent;
+  box-shadow: none;
 }
 
 .tamagotchi-screen-window {
@@ -893,7 +887,7 @@ th {
 }
 
 .tamagotchi-buttons {
-  margin-top: clamp(0.9rem, 2.4vw, 1.5rem);
+  margin-top: 0;
   display: flex;
   align-items: center;
   justify-content: center;

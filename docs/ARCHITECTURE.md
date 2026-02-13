@@ -206,3 +206,16 @@ Themes provide:
 - Hardware integration must stay behind plugin/display-driver contracts.
 - Presentation layer does not mutate domain directly; all state changes go through services.
 - Infrastructure adapters must not leak persistence/framework concerns into domain models.
+
+## 16. Architecture-Relevant Path Scope and Change Notes
+- Architecture-relevant paths for commit checks:
+  - `app/`
+  - `core/`
+  - `plugins/`
+  - `themes/`
+  - `config/`
+  - `clawgotchi/`
+  - `main.py`
+  - `install.sh`
+  - `update.sh`
+- 2026-02-13: Updated dashboard styling in `app/presentation/static/styles.css` to remove the decorative yellow shell block while keeping the centered display card and existing UI flow unchanged. This change does not alter module boundaries, APIs, data flow, persistence, or plugin architecture.
