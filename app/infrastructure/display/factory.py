@@ -10,11 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def create_display_driver(settings: DisplaySettings) -> DisplayDriver:
-    if settings.display_type.lower() == "epaper_hat" and settings.display_vendor.lower() == "waveshare":
-        logger.warning(
-            "Direct Waveshare display factory is deprecated. Use hardware plugins and hardware profile selection instead."
-        )
-
     dummy = DummyDisplayDriver(
         rotation=settings.display_rotation,
         write_debug_png=settings.display_debug_write_png,

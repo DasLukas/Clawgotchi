@@ -1,10 +1,10 @@
 # Clawgotchi
 
-Clawgotchi is an extensible FastAPI runtime with SQLite persistence, plugin/theme loading, a web UI, and Raspberry Pi hardware integration.
+Clawgotchi is an extensible FastAPI runtime with SQLite persistence, plugin/theme loading, a web UI, and plugin-based hardware integration.
 
 ## Project Description
 
-Clawgotchi runs as a local web service and virtual display mirror, with optional hardware display backends (for example Waveshare ePaper via plugin). The runtime is now user-directory based by default, so desktop installs on Linux/macOS/Windows do not need sudo/admin rights.
+Clawgotchi runs as a local web service and virtual display mirror, with optional plugin-based hardware display backends. The runtime is now user-directory based by default, so desktop installs on Linux/macOS/Windows do not need sudo/admin rights.
 
 ## Runtime Home (Permission-Safe Defaults)
 
@@ -92,11 +92,11 @@ The installer is idempotent. Re-run the same one-liner to update source + depend
 
 For repository-local updates, `update.sh` remains available and now supports runtime-venv resolution via `CLAW_VENV_PATH` / runtime home fallback.
 
-## Raspberry Pi (Optional SPI/systemd path)
+## Linux Service Integration (Optional systemd path)
 
 Desktop bootstrap does not install system services.
 
-For Raspberry Pi SPI/systemd provisioning (opt-in only):
+For optional systemd provisioning (opt-in only):
 
 - Pass `--systemd` to bootstrap, or
 - Run the legacy Pi installer explicitly:
@@ -135,7 +135,6 @@ Useful checks:
 
 - `python -m clawgotchi.tools.doctor --json`
 - `python -m clawgotchi.tools.display_test --backend dummy`
-- `python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw`
 
 ## Development Workflow
 
@@ -153,7 +152,7 @@ python main.py
 ### Tests
 
 ```bash
-pytest
+python -m pytest -q
 ```
 
 ### Branch strategy

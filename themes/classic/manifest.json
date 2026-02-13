@@ -2,8 +2,8 @@
   "id": "classic",
   "name": "Classic Paper",
   "version": "0.1.0",
-  "description": "Warm ePaper inspired visual baseline.",
-  "preview": "A warm sepia style designed for ePaper readability.",
+  "description": "Warm paper-inspired visual baseline.",
+  "preview": "A warm sepia style designed for monochrome readability.",
   "stylesheet": "assets/style.css",
   "placement": {
     "mode": "legacy_fullframe"

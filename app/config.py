@@ -37,24 +37,11 @@ class RuntimeConfig:
         config_file: Global defaults TOML path.
         api_key: Optional API key used for `/api/v1` endpoints.
         display_type: Display backend name.
-        display_vendor: Display vendor identifier.
         display_rotation: Rotation in degrees (0/90/180/270).
         display_use_partial: Partial refresh usage for supported drivers.
         display_dithering: Dithering toggle for render output.
         display_debug_write_png: Enable PNG debug dump for dummy backend.
         display_debug_png_path: Debug image output path.
-        display_spi_bus: SPI bus index.
-        display_spi_device: SPI device index.
-        display_spi_max_hz: SPI max clock.
-        display_gpio_dc_pin: Display DC GPIO pin.
-        display_gpio_rst_pin: Display reset GPIO pin.
-        display_gpio_busy_pin: Display busy GPIO pin.
-        display_gpio_cs_pin: Display chip select GPIO pin.
-        button_gpio_next_pin: NEXT button GPIO pin.
-        button_gpio_back_pin: BACK button GPIO pin.
-        button_gpio_confirm_pin: CONFIRM button GPIO pin.
-        button_gpio_special_pin: SPECIAL button GPIO pin.
-        button_gpio_debounce_ms: Debounce interval for GPIO buttons.
     """
 
     app_name: str
@@ -77,24 +64,11 @@ class RuntimeConfig:
     config_file: Path
     api_key: str
     display_type: str
-    display_vendor: str
     display_rotation: int
     display_use_partial: bool
     display_dithering: bool
     display_debug_write_png: bool
     display_debug_png_path: str
-    display_spi_bus: int
-    display_spi_device: int
-    display_spi_max_hz: int
-    display_gpio_dc_pin: int
-    display_gpio_rst_pin: int
-    display_gpio_busy_pin: int
-    display_gpio_cs_pin: int
-    button_gpio_next_pin: int
-    button_gpio_back_pin: int
-    button_gpio_confirm_pin: int
-    button_gpio_special_pin: int
-    button_gpio_debounce_ms: int
 
 
 class EnvironmentSettings(BaseSettings):
@@ -121,24 +95,11 @@ class EnvironmentSettings(BaseSettings):
     tick_interval_seconds: float = 2.0
     api_key: str = ""
     display_type: str = "dummy"
-    display_vendor: str = "waveshare"
     display_rotation: int = 0
     display_use_partial: bool = False
     display_dithering: bool = False
     display_debug_write_png: bool = True
     display_debug_png_path: str = "/tmp/clawgotchi_last_frame.png"
-    display_spi_bus: int = 0
-    display_spi_device: int = 0
-    display_spi_max_hz: int = 2_000_000
-    display_gpio_dc_pin: int = 25
-    display_gpio_rst_pin: int = 17
-    display_gpio_busy_pin: int = 24
-    display_gpio_cs_pin: int = 8
-    button_gpio_next_pin: int = -1
-    button_gpio_back_pin: int = -1
-    button_gpio_confirm_pin: int = -1
-    button_gpio_special_pin: int = -1
-    button_gpio_debounce_ms: int = 120
 
 
 def get_repo_root() -> Path:
@@ -366,24 +327,11 @@ class ConfigResolver:
             "config_file": str((repo_root / "config" / "defaults.toml").resolve()),
             "api_key": "",
             "display_type": "dummy",
-            "display_vendor": "waveshare",
             "display_rotation": 0,
             "display_use_partial": False,
             "display_dithering": False,
             "display_debug_write_png": True,
             "display_debug_png_path": str(runtime_layout["cache_directory"] / "clawgotchi_last_frame.png"),
-            "display_spi_bus": 0,
-            "display_spi_device": 0,
-            "display_spi_max_hz": 2_000_000,
-            "display_gpio_dc_pin": 25,
-            "display_gpio_rst_pin": 17,
-            "display_gpio_busy_pin": 24,
-            "display_gpio_cs_pin": 8,
-            "button_gpio_next_pin": -1,
-            "button_gpio_back_pin": -1,
-            "button_gpio_confirm_pin": -1,
-            "button_gpio_special_pin": -1,
-            "button_gpio_debounce_ms": 120,
         }
 
         config_file_path = Path(str(env_values.get("config_file", defaults["config_file"]))).expanduser()
@@ -440,24 +388,11 @@ class ConfigResolver:
             config_file=final_config_file,
             api_key=str(merged.get("api_key", "")),
             display_type=str(merged["display_type"]),
-            display_vendor=str(merged["display_vendor"]),
             display_rotation=int(merged["display_rotation"]),
             display_use_partial=self._coerce_bool(merged["display_use_partial"]),
             display_dithering=self._coerce_bool(merged["display_dithering"]),
             display_debug_write_png=self._coerce_bool(merged["display_debug_write_png"]),
             display_debug_png_path=str(debug_png_path),
-            display_spi_bus=int(merged["display_spi_bus"]),
-            display_spi_device=int(merged["display_spi_device"]),
-            display_spi_max_hz=int(merged["display_spi_max_hz"]),
-            display_gpio_dc_pin=int(merged["display_gpio_dc_pin"]),
-            display_gpio_rst_pin=int(merged["display_gpio_rst_pin"]),
-            display_gpio_busy_pin=int(merged["display_gpio_busy_pin"]),
-            display_gpio_cs_pin=int(merged["display_gpio_cs_pin"]),
-            button_gpio_next_pin=int(merged["button_gpio_next_pin"]),
-            button_gpio_back_pin=int(merged["button_gpio_back_pin"]),
-            button_gpio_confirm_pin=int(merged["button_gpio_confirm_pin"]),
-            button_gpio_special_pin=int(merged["button_gpio_special_pin"]),
-            button_gpio_debounce_ms=int(merged["button_gpio_debounce_ms"]),
         )
 
     def _load_file_values(self, config_file: Path) -> dict[str, Any]:
@@ -473,18 +408,6 @@ class ConfigResolver:
             if key in {
                 "port",
                 "display_rotation",
-                "display_spi_bus",
-                "display_spi_device",
-                "display_spi_max_hz",
-                "display_gpio_dc_pin",
-                "display_gpio_rst_pin",
-                "display_gpio_busy_pin",
-                "display_gpio_cs_pin",
-                "button_gpio_next_pin",
-                "button_gpio_back_pin",
-                "button_gpio_confirm_pin",
-                "button_gpio_special_pin",
-                "button_gpio_debounce_ms",
             }:
                 normalized[key] = int(raw_value)
             elif key in {"tick_interval_seconds"}:

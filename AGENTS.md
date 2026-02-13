@@ -11,7 +11,7 @@ Clawgotchi is a FastAPI application with strict layering:
 
 Persistence is SQLite-based. A shared 1-bit framebuffer is used to serve both the Web Mirror and hardware displays.
 
-Hardware is always plugin-based (Dummy default, Waveshare ePaper as a plugin). Do not put hardware logic into core layers.
+Hardware is always plugin-based (Dummy default, hardware drivers provided by plugins). Do not put hardware logic into core layers.
 
 Input is unified for web and hardware: 4 buttons `NEXT`, `BACK`, `CONFIRM`, `SPECIAL`.
 

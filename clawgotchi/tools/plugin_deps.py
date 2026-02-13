@@ -254,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         Exit code (`0` for success, non-zero on failure).
 
     Usage example:
-        `python -m clawgotchi.tools.plugin_deps install waveshare_epaper_27bw`
+        `python -m clawgotchi.tools.plugin_deps install example_fun`
     """
 
     parser = _build_parser()

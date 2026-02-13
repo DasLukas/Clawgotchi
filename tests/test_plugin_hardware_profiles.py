@@ -10,11 +10,11 @@ class _DummyPluginRepository:
     def list_plugins(self) -> list[dict]:
         return [
             {
-                "plugin_id": "waveshare_epaper_27bw",
+                "plugin_id": "sample_display_plugin",
                 "manifest": {
                     "metadata": {
                         "hardware_profiles": [
-                            {"id": "waveshare_epaper_27bw", "name": "Waveshare 2.7\" ePaper HAT"}
+                            {"id": "sample_display_v1", "name": "Sample Display v1"}
                         ]
                     }
                 },
@@ -34,7 +34,7 @@ def test_hardware_profiles_include_dummy_and_plugin_profiles() -> None:
     profiles = service.list_hardware_profiles()
 
     assert profiles[0] == {"id": "dummy", "name": "Dummy/Mock display"}
-    assert {"id": "waveshare_epaper_27bw", "name": "Waveshare 2.7\" ePaper HAT"} in profiles
+    assert {"id": "sample_display_v1", "name": "Sample Display v1"} in profiles
 
 
 class _State:
@@ -77,12 +77,12 @@ class _PluginRepositoryForActivation:
     def __init__(self) -> None:
         self.plugins = [
             {
-                "plugin_id": "waveshare_epaper_27bw",
+                "plugin_id": "sample_display_plugin",
                 "enabled": False,
                 "manifest": {
                     "metadata": {
                         "hardware_profiles": [
-                            {"id": "waveshare_epaper_27bw", "name": "Waveshare 2.7\" ePaper HAT"}
+                            {"id": "sample_display_v1", "name": "Sample Display v1"}
                         ]
                     }
                 },
@@ -112,10 +112,10 @@ def test_activate_hardware_profile_enables_provider_plugin() -> None:
         settings_repository=settings_repository,
     )
 
-    asyncio.run(service.activate_hardware_profile("waveshare_epaper_27bw"))
+    asyncio.run(service.activate_hardware_profile("sample_display_v1"))
 
     assert plugin_repository.list_plugins()[0]["enabled"] is True
-    assert state_repository.state.hardware_profile == "waveshare_epaper_27bw"
+    assert state_repository.state.hardware_profile == "sample_display_v1"
 
 
 def test_activate_hardware_profile_rejects_unknown_profile_id() -> None:

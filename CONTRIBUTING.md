@@ -63,7 +63,7 @@ Placement controls:
 
 ## 5) Animation Setup and FPS Guidance
 
-Use short loops and conservative FPS for ePaper:
+Use short loops and conservative FPS for monochrome displays:
 - `idle`: `0.25` to `0.5` FPS
 - reaction animation like `scratch`: `1.5` to `3.0` FPS
 

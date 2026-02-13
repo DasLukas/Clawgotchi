@@ -1,6 +1,6 @@
 {
   "id": "default",
-  "name": "Default ePaper Theme",
+  "name": "Default Monochrome Theme",
   "version": "0.2.0",
   "description": "Default sprite-based pet theme for monochrome displays.",
   "preview": "Sprite animation set with sidebar-aware placement.",

@@ -34,7 +34,6 @@ from app.infrastructure.database import Database
 from app.infrastructure.display.dummy import DummyDisplayDriver
 from app.infrastructure.display.sinks import DisplayDriverSink
 from app.infrastructure.hardware import DummyAudioDriver, DummyInputDriver, DummySensorDriver
-from app.infrastructure.input.gpio_buttons import GPIOButtonDriver
 from app.infrastructure.logging import configure_logging
 from app.infrastructure.plugin_loader import FileSystemPluginLoader
 from app.infrastructure.repositories import (
@@ -89,19 +88,11 @@ class ApplicationContainer:
 
         self.display_settings = DisplaySettings(
             display_type=self.config.display_type,
-            display_vendor=self.config.display_vendor,
             display_rotation=self.config.display_rotation,
             display_use_partial=self.config.display_use_partial,
             display_dithering=self.config.display_dithering,
             display_debug_write_png=self.config.display_debug_write_png,
             display_debug_png_path=self.config.display_debug_png_path,
-            display_spi_bus=self.config.display_spi_bus,
-            display_spi_device=self.config.display_spi_device,
-            display_spi_max_hz=self.config.display_spi_max_hz,
-            display_gpio_dc_pin=self.config.display_gpio_dc_pin,
-            display_gpio_rst_pin=self.config.display_gpio_rst_pin,
-            display_gpio_busy_pin=self.config.display_gpio_busy_pin,
-            display_gpio_cs_pin=self.config.display_gpio_cs_pin,
         )
 
         self.state_repository = SqlAlchemyStateRepository(self.database.session_factory)
@@ -140,17 +131,6 @@ class ApplicationContainer:
             input_router=self.input_router,
             menu_controller=self.menu_controller,
             default_theme_id="default",
-        )
-
-        self.gpio_button_driver = GPIOButtonDriver(
-            router=self.input_router,
-            pin_mapping={
-                ButtonId.NEXT: self.config.button_gpio_next_pin,
-                ButtonId.BACK: self.config.button_gpio_back_pin,
-                ButtonId.CONFIRM: self.config.button_gpio_confirm_pin,
-                ButtonId.SPECIAL: self.config.button_gpio_special_pin,
-            },
-            debounce_ms=self.config.button_gpio_debounce_ms,
         )
 
         self.input_driver = DummyInputDriver()
@@ -267,7 +247,6 @@ class ApplicationContainer:
         self.refresh_display_driver(profile_id=state.hardware_profile)
         self.render_service.set_theme(state.active_theme_id)
         self._render_current_pet_frame()
-        self.gpio_button_driver.start()
 
         self._tasks = [
             asyncio.create_task(self.command_worker.run(), name="command-worker"),
@@ -286,7 +265,6 @@ class ApplicationContainer:
                 pass
 
         await self.plugin_runtime.shutdown()
-        self.gpio_button_driver.stop()
         self._display_update_loop = None
 
     def refresh_display_driver(self, profile_id: str) -> dict[str, Any]:
@@ -448,7 +426,7 @@ class ApplicationContainer:
         draw_a.rectangle((0, 0, self.framebuffer.width - 1, self.framebuffer.height - 1), outline=0, width=2)
         draw_a.text((12, 12), "Clawgotchi ready", fill=0)
         draw_a.text((12, 36), backend_label, fill=0)
-        draw_a.text((12, 60), "SPI online", fill=0)
+        draw_a.text((12, 60), "Hardware online", fill=0)
 
         frame_b = Image.new("1", (self.framebuffer.width, self.framebuffer.height), color=1)
         draw_b = ImageDraw.Draw(frame_b)
