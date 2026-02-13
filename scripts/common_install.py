@@ -205,16 +205,17 @@ def _build_unix_launcher_script(
     repo_root: Path,
     bootstrap_python: Path,
 ) -> str:
+    venv_root = venv_python.parent.parent
     return "\n".join(
         [
             "#!/usr/bin/env bash",
             "set -Eeuo pipefail",
             f'export CLAW_RUNTIME_HOME="{runtime_home.resolve()}"',
             f'export CLAW_ENV_FILE="{env_file.resolve()}"',
-            f'export CLAW_VENV_PATH="{venv_python.resolve().parent.parent}"',
+            f'export CLAW_VENV_PATH="{venv_root}"',
             f'export CLAW_BOOTSTRAP_PYTHON="{bootstrap_python.resolve()}"',
             "export PYTHONUNBUFFERED=1",
-            f'exec "{venv_python.resolve()}" "{(repo_root / "main.py").resolve()}" "$@"',
+            f'exec "{venv_python}" "{(repo_root / "main.py").resolve()}" "$@"',
             "",
         ]
     )
@@ -227,15 +228,16 @@ def _build_windows_launcher_script(
     repo_root: Path,
     bootstrap_python: Path,
 ) -> str:
+    venv_root = venv_python.parent.parent
     return "\n".join(
         [
             '$ErrorActionPreference = "Stop"',
             f'$env:CLAW_RUNTIME_HOME = "{runtime_home.resolve()}"',
             f'$env:CLAW_ENV_FILE = "{env_file.resolve()}"',
-            f'$env:CLAW_VENV_PATH = "{venv_python.resolve().parent.parent}"',
+            f'$env:CLAW_VENV_PATH = "{venv_root}"',
             f'$env:CLAW_BOOTSTRAP_PYTHON = "{bootstrap_python.resolve()}"',
             '$env:PYTHONUNBUFFERED = "1"',
-            f'& "{venv_python.resolve()}" "{(repo_root / "main.py").resolve()}" @Args',
+            f'& "{venv_python}" "{(repo_root / "main.py").resolve()}" @Args',
             "",
         ]
     )
