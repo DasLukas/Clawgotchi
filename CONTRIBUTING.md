@@ -155,3 +155,29 @@ To keep output clean on monochrome displays:
 - Avoid noisy dithering unless absolutely needed
 - Keep edges thick enough for low-resolution readability
 - Use high-contrast sprites with minimal texture noise
+
+## 10) Architecture Doc Maintenance
+
+Architecture changes must update `docs/ARCHITECTURE.md` in the same commit.
+
+Relevant architecture paths:
+- `app/**`
+- `core/**`
+- `plugins/**`
+- `themes/**`
+- `config/**`
+- `clawgotchi/**`
+- `main.py`
+- `install.sh`
+- `update.sh`
+
+One-time hook setup:
+
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit scripts/check_architecture_doc_updated.sh
+```
+
+What the hook does:
+- Runs `scripts/check_architecture_doc_updated.sh`.
+- Blocks commit if relevant paths are staged but `docs/ARCHITECTURE.md` is not staged.

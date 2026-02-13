@@ -299,7 +299,7 @@ Display API endpoints:
 
 ## Theme Authoring
 
-For a complete guide to creating sprite-based themes and legacy compatibility manifests, see `CONTRIBUTER.md`.
+For a complete guide to creating sprite-based themes and legacy compatibility manifests, see `CONTRIBUTING.md`.
 
 ## Updating
 
