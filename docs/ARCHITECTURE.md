@@ -243,11 +243,11 @@ Update entrypoint:
 - `update.sh`
 
 Update modes:
-- Managed workspace mode (default): delegates to `<runtime_home>/src` when available, refreshes virtualenv, and reinstalls editable package without git fetch/pull.
-- Local checkout mode (`--local-repo` or `CLWG_FORCE_LOCAL_REPO=1`): runs update in the current checkout for development workflows.
-- Git-sync mode (`--sync-git` or `CLWG_SYNC_GIT=1`): requires clean working tree, then fetch/pull before dependency refresh.
-- Pip self-upgrade is opt-in (`--upgrade-pip` or `CLWG_UPGRADE_PIP=1`).
-- Editable reinstall has a one-time virtualenv recreate fallback for permission/tooling recovery.
+- Desktop mode (default): delegates to bootstrap installer for managed workspace updates (`<runtime_home>/src`), including git sync and runtime re-provisioning.
+- Desktop local mode (`--local-repo` or `CLWG_FORCE_LOCAL_REPO=1`): updates the current checkout instead of managed workspace.
+- Desktop no-sync mode (`--no-sync-git` or `CLWG_SYNC_GIT=0`): skips git sync and only refreshes virtualenv/install.
+- Root/Pi mode: keeps service-oriented update flow with status files and optional service restart/reboot handling.
+- Private repo SSH access is supported through `CLAW_GIT_SSH_COMMAND` or `CLAW_GIT_SSH_KEY`.
 - Update recovery uses Python >=3.11 only; interpreter can be overridden via `CLAW_BOOTSTRAP_PYTHON`.
 
 Raspberry Pi timer/service installs set `CLWG_SYNC_GIT=1` and `CLWG_FORCE_LOCAL_REPO=1` in generated update helper to keep scheduled remote sync behavior on the Pi checkout.
@@ -264,8 +264,9 @@ Bootstrap repository sync behavior:
   - `themes/`
   - `config/`
   - `clawgotchi/`
-  - `main.py`
-  - `install.sh`
-  - `update.sh`
+- `main.py`
+- `install.sh`
+- `update.sh`
 - 2026-02-13: Reworked install/update behavior for dedicated per-user host workspace paths and managed workspace defaults, including update delegation, self-healing venv reinstall, and bootstrap auto re-clone for broken managed checkouts.
+- 2026-02-13: Simplified desktop updates to a bootstrap-driven managed workflow, preserved private SSH remotes by default, and added explicit SSH auth environment hooks (`CLAW_GIT_SSH_COMMAND` / `CLAW_GIT_SSH_KEY`).
 - 2026-02-13: Removed the three decorative dots below the dashboard display by deleting the `tamagotchi-buttons` markup from `app/presentation/templates/dashboard.html`. This is presentation-only and does not affect module boundaries, APIs, data flow, persistence, or plugin architecture.

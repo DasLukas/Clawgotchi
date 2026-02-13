@@ -5,7 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE="${CLWG_REMOTE:-origin}"
 REMOTE_URL="${CLWG_REMOTE_URL:-}"
 BRANCH="${CLWG_BRANCH:-main}"
-SYNC_GIT="${CLWG_SYNC_GIT:-0}"
+SYNC_GIT="${CLWG_SYNC_GIT:-1}"
 UPGRADE_PIP="${CLWG_UPGRADE_PIP:-0}"
 FORCE_LOCAL_REPO="${CLWG_FORCE_LOCAL_REPO:-0}"
 BOOTSTRAP_PYTHON="${CLAW_BOOTSTRAP_PYTHON:-}"
@@ -48,14 +48,15 @@ normalize_path() {
 
 maybe_delegate_to_managed_source() {
   local current_root managed_root managed_update_script
+
+  if is_true "${FORCE_LOCAL_REPO}"; then
+    log "Local repository mode enabled. Updating current checkout: ${PROJECT_ROOT}"
+    return 0
+  fi
+
   current_root="$(normalize_path "${PROJECT_ROOT}")"
   managed_root="$(normalize_path "${RUNTIME_HOME}/src")"
   managed_update_script="${managed_root}/update.sh"
-
-  if is_true "${FORCE_LOCAL_REPO}"; then
-    log "Local repository mode enabled. Updating current checkout: ${current_root}"
-    return 0
-  fi
 
   if [[ "${current_root}" == "${managed_root}" ]]; then
     return 0
@@ -74,18 +75,21 @@ print_usage() {
 Usage: ./update.sh [--sync-git|--no-sync-git] [--upgrade-pip|--no-upgrade-pip] [--local-repo|--managed-repo]
 
 Modes:
-  --no-sync-git (default): Refresh virtualenv + local package install only.
-  --sync-git:              Validate clean repo, fetch/pull from configured remote, then refresh dependencies.
+  --sync-git (default):    Update source checkout and refresh virtualenv/dependencies.
+  --no-sync-git:           Skip git sync and only refresh virtualenv/dependencies.
   --no-upgrade-pip (default): Keep current pip version.
   --upgrade-pip:             Upgrade pip before reinstall.
   --managed-repo (default): Delegate updates to managed workspace checkout (<runtime_home>/src) when available.
   --local-repo:             Force update in current checkout (development mode).
 
 Environment:
-  CLWG_SYNC_GIT=1 enables git sync mode.
+  CLWG_SYNC_GIT=1 enables git sync mode (default).
+  CLWG_SYNC_GIT=0 disables git sync mode.
   CLWG_UPGRADE_PIP=1 enables pip self-upgrade.
   CLWG_FORCE_LOCAL_REPO=1 disables managed workspace delegation.
   CLAW_BOOTSTRAP_PYTHON=/path/to/python3.11 overrides the interpreter used for venv creation/recovery.
+  CLAW_GIT_SSH_COMMAND can provide a custom SSH command for private repository access.
+  CLAW_GIT_SSH_KEY=/path/to/key is converted to an SSH command automatically.
 EOF
 }
 
@@ -125,6 +129,65 @@ parse_args() {
         ;;
     esac
   done
+}
+
+setup_git_ssh_environment() {
+  if [[ -n "${CLAW_GIT_SSH_COMMAND:-}" ]]; then
+    export GIT_SSH_COMMAND="${CLAW_GIT_SSH_COMMAND}"
+    return 0
+  fi
+
+  if [[ -n "${CLAW_GIT_SSH_KEY:-}" ]]; then
+    if [[ ! -f "${CLAW_GIT_SSH_KEY}" ]]; then
+      die "CLAW_GIT_SSH_KEY is set but file does not exist: ${CLAW_GIT_SSH_KEY}"
+    fi
+    export GIT_SSH_COMMAND="ssh -i ${CLAW_GIT_SSH_KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+  fi
+}
+
+run_desktop_update() {
+  local source_root bootstrap_script common_install_script bootstrap_python
+  local repo_url_arg=()
+  local branch_arg=()
+
+  source_root="${RUNTIME_HOME}/src"
+  if is_true "${FORCE_LOCAL_REPO}"; then
+    source_root="${PROJECT_ROOT}"
+  fi
+
+  setup_git_ssh_environment
+
+  if [[ "${SYNC_GIT_ENABLED}" == "true" ]]; then
+    if is_true "${FORCE_LOCAL_REPO}" && [[ -d "${source_root}/.git" ]]; then
+      if ! git -C "${source_root}" diff --quiet || ! git -C "${source_root}" diff --cached --quiet; then
+        die "Local checkout has uncommitted changes. Commit/stash first, or run with --no-sync-git."
+      fi
+    fi
+
+    bootstrap_script="${source_root}/scripts/install_bootstrap.sh"
+    if [[ ! -x "${bootstrap_script}" ]]; then
+      bootstrap_script="${PROJECT_ROOT}/scripts/install_bootstrap.sh"
+    fi
+    [[ -x "${bootstrap_script}" ]] || die "Bootstrap installer not found: ${bootstrap_script}"
+
+    if [[ -n "${CLAW_REPO_URL:-}" ]]; then
+      repo_url_arg=(--repo-url "${CLAW_REPO_URL}")
+    fi
+    if [[ -n "${CLAW_BRANCH:-}" ]]; then
+      branch_arg=(--branch "${CLAW_BRANCH}")
+    fi
+
+    log "Desktop update via bootstrap: ${source_root}"
+    bash "${bootstrap_script}" --source-root "${source_root}" "${repo_url_arg[@]}" "${branch_arg[@]}"
+    return 0
+  fi
+
+  common_install_script="${source_root}/scripts/common_install.py"
+  [[ -f "${common_install_script}" ]] || die "Installer helper not found: ${common_install_script}"
+
+  bootstrap_python="${BOOTSTRAP_PYTHON:-python3}"
+  log "Desktop update without git sync: ${source_root}"
+  "${bootstrap_python}" "${common_install_script}" --repo-root "${source_root}" --skip-smoke
 }
 
 resolve_venv_paths() {
@@ -373,7 +436,6 @@ service_exists() {
 }
 
 parse_args "$@"
-maybe_delegate_to_managed_source "$@"
 SYNC_GIT_ENABLED="false"
 if is_true "${SYNC_GIT}"; then
   SYNC_GIT_ENABLED="true"
@@ -382,6 +444,13 @@ UPGRADE_PIP_ENABLED="false"
 if is_true "${UPGRADE_PIP}"; then
   UPGRADE_PIP_ENABLED="true"
 fi
+
+if [[ "${EUID}" -ne 0 ]]; then
+  run_desktop_update
+  exit 0
+fi
+
+maybe_delegate_to_managed_source "$@"
 resolve_venv_paths
 
 if [[ "${EUID}" -eq 0 ]]; then
@@ -415,7 +484,7 @@ if [[ "${SYNC_GIT_ENABLED}" == "true" ]]; then
 
   log "Fetching updates from ${REMOTE}/${BRANCH}."
   if ! run_git fetch "${REMOTE}"; then
-    die "Git fetch failed. Try running local-only update mode (default) and repair repository history separately."
+    die "Git fetch failed. Check repository access/credentials, or run with --no-sync-git."
   fi
   run_git checkout "${BRANCH}"
   run_git pull --ff-only "${REMOTE}" "${BRANCH}"

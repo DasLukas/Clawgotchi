@@ -6,6 +6,10 @@ DEFAULT_REPO_URL="https://github.com/DasLukas/Clawgotchi.git"
 DEFAULT_BRANCH="main"
 
 REPO_URL="${CLAW_REPO_URL:-${DEFAULT_REPO_URL}}"
+REPO_URL_EXPLICIT=0
+if [[ -n "${CLAW_REPO_URL:-}" ]]; then
+  REPO_URL_EXPLICIT=1
+fi
 BRANCH="${CLAW_BRANCH:-${DEFAULT_BRANCH}}"
 SOURCE_ROOT=""
 DRY_RUN=0
@@ -50,6 +54,20 @@ require_command() {
   fi
 }
 
+setup_git_ssh_environment() {
+  if [[ -n "${CLAW_GIT_SSH_COMMAND:-}" ]]; then
+    export GIT_SSH_COMMAND="${CLAW_GIT_SSH_COMMAND}"
+    return 0
+  fi
+
+  if [[ -n "${CLAW_GIT_SSH_KEY:-}" ]]; then
+    if [[ ! -f "${CLAW_GIT_SSH_KEY}" ]]; then
+      die "CLAW_GIT_SSH_KEY is set but file does not exist: ${CLAW_GIT_SSH_KEY}"
+    fi
+    export GIT_SSH_COMMAND="ssh -i ${CLAW_GIT_SSH_KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+  fi
+}
+
 check_python_version() {
   if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
     die "Python 3.11+ is required. Install Python 3.11+ and rerun."
@@ -66,6 +84,7 @@ parse_args() {
       --repo-url)
         [[ $# -ge 2 ]] || die "--repo-url requires a value."
         REPO_URL="$2"
+        REPO_URL_EXPLICIT=1
         shift 2
         ;;
       --branch)
@@ -139,8 +158,10 @@ sync_repository() {
 
   update_checkout() {
     local target_root="$1"
-    if run git -C "${target_root}" remote set-url origin "${REPO_URL}" \
-      && run git -C "${target_root}" fetch --prune origin \
+    if [[ "${REPO_URL_EXPLICIT}" == "1" ]]; then
+      run git -C "${target_root}" remote set-url origin "${REPO_URL}"
+    fi
+    if run git -C "${target_root}" fetch --prune origin \
       && run git -C "${target_root}" checkout "${BRANCH}" \
       && run git -C "${target_root}" pull --ff-only origin "${BRANCH}"; then
       return 0
@@ -217,6 +238,7 @@ main() {
     require_command "python3" "Install Python 3.11+ using your package manager."
   fi
   check_python_version
+  setup_git_ssh_environment
 
   local source_root
   source_root="$(resolve_source_root)"

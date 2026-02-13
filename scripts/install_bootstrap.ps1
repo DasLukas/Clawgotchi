@@ -9,6 +9,14 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$script:RepoUrlExplicit = $false
+if ($env:CLAW_REPO_URL) {
+  $script:RepoUrlExplicit = $true
+}
+if ($PSBoundParameters.ContainsKey("RepoUrl")) {
+  $script:RepoUrlExplicit = $true
+}
+
 function Write-Log {
   param([string]$Message)
   Write-Host "[clawgotchi-install] $Message"
@@ -74,6 +82,20 @@ function Assert-RequiredTools {
   Invoke-Python -Arguments @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)") -Description "Check Python >= 3.11"
 }
 
+function Configure-GitSsh {
+  if ($env:CLAW_GIT_SSH_COMMAND) {
+    $env:GIT_SSH_COMMAND = $env:CLAW_GIT_SSH_COMMAND
+    return
+  }
+
+  if ($env:CLAW_GIT_SSH_KEY) {
+    if (-not (Test-Path $env:CLAW_GIT_SSH_KEY)) {
+      Fail "CLAW_GIT_SSH_KEY is set but file does not exist: $($env:CLAW_GIT_SSH_KEY)"
+    }
+    $env:GIT_SSH_COMMAND = "ssh -i `"$($env:CLAW_GIT_SSH_KEY)`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+  }
+}
+
 function Resolve-SourceRoot {
   if ($SourceRoot) {
     return [System.IO.Path]::GetFullPath($SourceRoot)
@@ -128,7 +150,9 @@ function Sync-Repository {
     Write-Log "Updating existing source checkout in $RepoRoot"
     $updateSucceeded = $true
     try {
-      Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "remote", "set-url", "origin", $RepoUrl) -Description "Set origin URL"
+      if ($script:RepoUrlExplicit) {
+        Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "remote", "set-url", "origin", $RepoUrl) -Description "Set origin URL"
+      }
       Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "fetch", "--prune", "origin") -Description "Fetch repository"
       Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "checkout", $Branch) -Description "Checkout branch"
       Invoke-ExternalCommand -Command @("git", "-C", $RepoRoot, "pull", "--ff-only", "origin", $Branch) -Description "Pull latest branch"
@@ -195,6 +219,7 @@ function Print-FinalInstructions {
 
 try {
   Assert-RequiredTools
+  Configure-GitSsh
   $resolvedSourceRoot = Resolve-SourceRoot
   Sync-Repository -RepoRoot $resolvedSourceRoot
   Run-CommonInstall -RepoRoot $resolvedSourceRoot

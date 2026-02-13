@@ -61,6 +61,12 @@ curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | 
 irm https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install.ps1 | iex
 ```
 
+### Install from a private SSH repository (Unix)
+
+```bash
+CLAW_REPO_URL=git@github.com:your-org/Clawgotchi.git CLAW_GIT_SSH_KEY=~/.ssh/your_key curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | bash
+```
+
 ### Unified One-liner (prints the correct platform command)
 
 ```bash
@@ -116,20 +122,17 @@ Then open:
 
 - `http://localhost:8000/`
 
-## Update Workflow (Simplified Git Handling)
+## Update Workflow (Minimal Managed Process)
 
 The installer is idempotent. Re-run the same one-liner to update source + dependencies safely.
 
-`update.sh` now defaults to **managed workspace update mode**:
+Desktop `update.sh` now follows a minimal managed workflow:
 
-- refreshes virtualenv tooling
-- reinstalls the managed checkout (`pip install -e <runtime_home>/src`)
-- delegates automatically to the managed workspace when launched from another clone
-- does **not** run `git fetch/pull` unless explicitly requested
-- does **not** force a pip self-upgrade unless explicitly requested
-- retries once with virtualenv recreation if editable install fails (permission/tooling self-heal)
-
-This avoids update failures caused by local branch state, dirty working trees, or incomplete fetch objects.
+- updates the managed source checkout (`<runtime_home>/src`) via bootstrap
+- refreshes the managed virtualenv and editable install
+- regenerates launchers and runtime `.env`
+- keeps local development checkouts separate by default
+- supports private repo SSH updates through `CLAW_GIT_SSH_COMMAND` or `CLAW_GIT_SSH_KEY`
 
 ### Update on macOS/Linux desktop installs
 
@@ -139,27 +142,29 @@ Recommended:
 curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | bash
 ```
 
-If you are in another local checkout, `./update.sh` delegates to the managed workspace automatically.
+Direct update command:
 
-If you explicitly want to update the current development checkout:
+```bash
+"$HOME/Library/Application Support/Clawgotchi/src/update.sh"
+```
+
+If you explicitly want to update the current development checkout instead of the managed workspace:
 
 ```bash
 cd /path/to/Clawgotchi
 ./update.sh --local-repo
 ```
 
-If you explicitly want a git pull in managed mode:
+If you want to skip git sync (offline/local reinstall only):
 
 ```bash
-./update.sh --sync-git
+./update.sh --no-sync-git
 ```
 
-Managed mode is default to keep application updates separated from development repositories.
-
-If you also want to upgrade pip during update:
+For private SSH repositories:
 
 ```bash
-./update.sh --sync-git --upgrade-pip
+CLAW_REPO_URL=git@github.com:your-org/Clawgotchi.git CLAW_GIT_SSH_KEY=~/.ssh/your_key "$HOME/Library/Application Support/Clawgotchi/src/update.sh"
 ```
 
 ### Update on Windows installs
