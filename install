@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+BOOTSTRAP_URL="${CLAW_INSTALL_BOOTSTRAP_URL:-https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/scripts/install_bootstrap.sh}"
+curl -fsSL "${BOOTSTRAP_URL}" | bash -s -- "$@"

@@ -27,9 +27,10 @@
 <section class="stack" id="quick-start">
   {{ section_header("Quick Start", "Bootstrap from terminal or continue with the form below.", "quick-start-heading") }}
   {% set quickstart_commands -%}
-$ curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo bash
-$ sudo systemctl enable --now clawgotchi.service
-$ open http://<your-pi-host>:8000/setup
+$ curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install | bash
+$ clawgotchi
+PS> irm https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.ps1 | iex
+PS> & "$env:LOCALAPPDATA\Clawgotchi\bin\clawgotchi.ps1"
   {%- endset %}
   {{ code_block(quickstart_commands, "Bootstrap Commands") }}
 </section>

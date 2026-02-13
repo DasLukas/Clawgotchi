@@ -1,465 +1,168 @@
 # Clawgotchi
 
-Clawgotchi ist ein erweiterbares Raspberry-Pi-Projekt mit FastAPI-Weboberflaeche, REST-API, Theme-/Plugin-System und SQLite-Persistenz.
+Clawgotchi is an extensible FastAPI runtime with SQLite persistence, plugin/theme loading, a web UI, and Raspberry Pi hardware integration.
 
-## Features
+## Project Description
 
-- Schichtenarchitektur: `domain`, `application`, `infrastructure`, `presentation`
-- FastAPI REST API + Jinja2 Web-UI
-- Setup-Wizard, Dashboard, Themes und Plugins
-- SQLite-Statuspersistenz mit Snapshots
-- Hintergrund-Worker fuer Tick-Loop und Command-Queue
-- Hardware display backends via plugins (Dummy + Waveshare ePaper 2.7" B/W)
-- Virtual Display Mirror in Web UI backed by a shared in-memory 1-bit framebuffer
-- Sidebar menu rendered directly into the shared framebuffer (hardware + web mirror)
-- Sprite-based pet rendering with legacy fullframe compatibility mode
+Clawgotchi runs as a local web service and virtual display mirror, with optional hardware display backends (for example Waveshare ePaper via plugin). The runtime is now user-directory based by default, so desktop installs on Linux/macOS/Windows do not need sudo/admin rights.
 
-## Voraussetzungen
+## Runtime Home (Permission-Safe Defaults)
 
-- Raspberry Pi OS Lite/Minimal (Debian-basiert)
-- Internetzugang fuer `apt` und `pip`
-- Git-Repository via SSH (`git@...`)
-- Root-Rechte (z. B. `sudo`)
+By default, Clawgotchi stores writable state in a per-user runtime home:
 
-## Installation
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/clawgotchi`
+- macOS: `~/Library/Application Support/Clawgotchi`
+- Windows: `%LOCALAPPDATA%\Clawgotchi`
 
-### A) Automatische Installation (empfohlen)
+Runtime layout:
 
-Einzeiler:
+- `db/clawgotchi.db`
+- `logs/`
+- `plugins/`
+- `themes/`
+- `cache/`
+- `config/`
+- `bin/`
+- `.env`
 
-```bash
-curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo bash
-```
+Built-in repository plugins/themes remain available as read-only fallback roots. Runtime roots take precedence.
 
-Nicht-interaktiv (keine Rueckfragen, alle Pflichtwerte gesetzt):
+## Setup Instructions
+
+### One-liner Install (macOS/Linux)
 
 ```bash
-curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo env \
-  CLWG_USER=clawgotchi \
-  CLWG_GIT_SSH_URL=git@github.com:ORG/REPO.git \
-  CLWG_GIT_HOST=github.com \
-  CLWG_UPDATE_TIME=03:30 \
-  bash
+curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install | bash
 ```
 
-Dry-Run (zeigt nur Aktionen, fuehrt nichts aus):
+### One-liner Install (Windows PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/install.ps1 | iex
+```
+
+### Unified One-liner (prints the correct platform command)
 
 ```bash
-curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.sh | sudo env \
-  CLWG_USER=clawgotchi \
-  CLWG_GIT_SSH_URL=git@github.com:ORG/REPO.git \
-  CLWG_GIT_HOST=github.com \
-  CLWG_UPDATE_TIME=03:30 \
-  CLWG_DRYRUN=1 \
-  bash
+python -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/scripts/print_install_command.py').read())"
 ```
 
-Was der Installer macht:
+## Installation Steps (what bootstrap does)
 
-- Legt Benutzer an (falls nicht vorhanden) oder verwendet bestehenden Benutzer.
-- Installiert Systempakete, Python-Umgebung und `pip install -e .` in `/opt/clawgotchi/.venv`.
-- Aktiviert SPI (non-interaktiv, falls moeglich) und setzt `dtparam=spi=on`.
-- Konfiguriert `unattended-upgrades`.
-- Erstellt `clawgotchi.service`.
-- Erstellt naechtlichen Update-Job (`clawgotchi-update.service` + `clawgotchi-update.timer`) fuer `main`.
-- Fuehrt Git-Operationen fuer Updates explizit als Zielbenutzer aus (nicht als root).
+Bootstrap installer flow (`scripts/install_bootstrap.sh` / `scripts/install_bootstrap.ps1` + `scripts/common_install.py`):
 
-### B) Manuelle Installation
+1. Verifies required tools (`git`, Python 3.11+).
+2. Clones or updates source checkout (`~/.local/share/clawgotchi/src` on Unix-like systems, `%LOCALAPPDATA%\Clawgotchi\src` on Windows).
+3. Creates/updates runtime virtualenv in runtime home (`venv`).
+4. Installs dependencies into the virtualenv (`pip install -e <repo>`).
+5. Creates runtime directories and runtime `.env` in runtime home.
+6. Creates launchers:
+   - Unix: runtime `bin/clawgotchi`, repo `./clawgotchi`, and `~/.local/bin/clawgotchi`
+   - Windows: runtime `bin/clawgotchi.ps1` and repo `./clawgotchi.ps1`
+7. Runs smoke diagnostics via doctor (`python -m clawgotchi.tools.doctor --smoke --check-startup`).
 
-1. Systempakete installieren:
+### Dry-run
+
+Unix:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends \
-  ca-certificates curl git openssh-client \
-  python3 python3-pip python3-venv \
-  unattended-upgrades apt-listchanges
+curl -fsSL https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/scripts/install_bootstrap.sh | bash -s -- --dry-run
 ```
 
-2. Benutzer anlegen (nur falls nicht vorhanden):
+Windows:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/DasLukas/Clawgotchi/main/scripts/install_bootstrap.ps1))) -DryRun
+```
+
+## Build / Run Instructions
+
+After install:
+
+- Unix: `clawgotchi`
+- Windows: `& "$env:LOCALAPPDATA\Clawgotchi\bin\clawgotchi.ps1"`
+
+Then open:
+
+- `http://localhost:8000/`
+
+## Reinstall / Update
+
+The installer is idempotent. Re-run the same one-liner to update source + dependencies safely.
+
+For repository-local updates, `update.sh` remains available and now supports runtime-venv resolution via `CLAW_VENV_PATH` / runtime home fallback.
+
+## Raspberry Pi (Optional SPI/systemd path)
+
+Desktop bootstrap does not install system services.
+
+For Raspberry Pi SPI/systemd provisioning (opt-in only):
+
+- Pass `--systemd` to bootstrap, or
+- Run the legacy Pi installer explicitly:
 
 ```bash
-id -u clawgotchi >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash clawgotchi
+sudo bash install.sh
 ```
 
-3. SPI aktivieren:
+This keeps Pi service/timer setup separate from desktop installs.
+
+## Plugin Dependency Policy (Manager-Ready)
+
+Plugin Python dependencies must install into the same Clawgotchi virtualenv (never global pip).
+
+Helper command:
 
 ```bash
-sudo raspi-config nonint do_spi 0
+python -m clawgotchi.tools.plugin_deps install <plugin_id>
 ```
 
-Zusatzlich sicherstellen, dass in `/boot/config.txt` (oder je nach System `/boot/firmware/config.txt`) Folgendes vorhanden ist:
+Behavior:
+
+- Resolves plugin manifests from runtime + built-in roots.
+- Installs declared plugin dependencies into the managed venv.
+- Records installs in runtime registry: `plugins/registry.json`.
+
+## Troubleshooting / Doctor
+
+Run diagnostics:
 
 ```bash
-dtparam=spi=on
+python -m clawgotchi.tools.doctor --smoke --check-startup
 ```
 
-4. SSH-Hinweis (optional, nicht automatisch aktivieren):
+Useful checks:
+
+- `python -m clawgotchi.tools.doctor --json`
+- `python -m clawgotchi.tools.display_test --backend dummy`
+- `python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw`
+
+## Development Workflow
+
+### Local development setup
 
 ```bash
-sudo systemctl enable --now ssh
+git clone https://github.com/DasLukas/Clawgotchi.git
+cd Clawgotchi
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+python main.py
 ```
 
-5. Deploy-Key fuer Git-SSH vorbereiten (als Zielbenutzer):
+### Tests
 
 ```bash
-sudo -u clawgotchi mkdir -p /home/clawgotchi/.ssh
-sudo -u clawgotchi chmod 700 /home/clawgotchi/.ssh
-sudo -u clawgotchi test -f /home/clawgotchi/.ssh/id_ed25519 || \
-  sudo -u clawgotchi ssh-keygen -t ed25519 -N "" -f /home/clawgotchi/.ssh/id_ed25519 -C "clawgotchi-deploy@$(hostname -s)"
-sudo -u clawgotchi cat /home/clawgotchi/.ssh/id_ed25519.pub
+pytest
 ```
 
-Public Key als Deploy Key (read-only empfohlen) im Git-Host hinterlegen. Danach Host-Key hinterlegen und Test:
+### Branch strategy
 
-```bash
-sudo -u clawgotchi touch /home/clawgotchi/.ssh/known_hosts
-sudo -u clawgotchi chmod 600 /home/clawgotchi/.ssh/known_hosts
-sudo ssh-keyscan -H github.com | sudo tee -a /home/clawgotchi/.ssh/known_hosts >/dev/null
-sudo chown clawgotchi:clawgotchi /home/clawgotchi/.ssh/known_hosts
-sudo -u clawgotchi ssh -T git@github.com
-```
+- `main`: publish/release branch
+- `dev`: integration/development branch (if used in your workflow)
 
-6. Projekt nach `/opt/clawgotchi` klonen:
+## Additional Documentation
 
-```bash
-sudo mkdir -p /opt/clawgotchi
-sudo chown -R clawgotchi:clawgotchi /opt/clawgotchi
-sudo -u clawgotchi git clone git@github.com:ORG/REPO.git /opt/clawgotchi
-sudo -u clawgotchi bash -lc "cd /opt/clawgotchi && git checkout main"
-```
-
-Falls bereits vorhanden:
-
-```bash
-sudo -u clawgotchi bash -lc "cd /opt/clawgotchi && git fetch origin && git checkout main && git pull --ff-only origin main"
-```
-
-7. Virtual Environment und Python-Abhaengigkeiten installieren:
-
-```bash
-sudo -u clawgotchi python3 -m venv /opt/clawgotchi/.venv
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/pip install --upgrade pip setuptools wheel
-sudo -u clawgotchi bash -lc "cd /opt/clawgotchi && /opt/clawgotchi/.venv/bin/pip install -e ."
-```
-
-8. `clawgotchi.service` erstellen:
-
-```bash
-sudo tee /etc/systemd/system/clawgotchi.service >/dev/null <<'EOF'
-[Unit]
-Description=Clawgotchi Service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=clawgotchi
-Group=clawgotchi
-WorkingDirectory=/opt/clawgotchi
-ExecStart=/opt/clawgotchi/.venv/bin/python /opt/clawgotchi/main.py
-Restart=on-failure
-RestartSec=5
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-9. Unattended Upgrades aktivieren:
-
-```bash
-sudo dpkg-reconfigure -f noninteractive unattended-upgrades
-sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-EOF
-sudo systemctl enable --now unattended-upgrades
-```
-
-10. Update-Skript erstellen (`/usr/local/bin/clawgotchi-update.sh`):
-
-```bash
-sudo tee /usr/local/bin/clawgotchi-update.sh >/dev/null <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
-export CLWG_USER="clawgotchi"
-export CLWG_REMOTE="origin"
-export CLWG_BRANCH="main"
-export CLWG_REMOTE_URL="git@github.com:ORG/REPO.git"
-export CLWG_SERVICE_NAME="clawgotchi.service"
-export CLWG_UPDATE_STATUS_FILE="/tmp/clawgotchi-update-status.env"
-
-exec /opt/clawgotchi/update.sh
-EOF
-sudo chmod 755 /usr/local/bin/clawgotchi-update.sh
-sudo chown root:root /usr/local/bin/clawgotchi-update.sh
-```
-
-11. Update-Service + Timer erstellen:
-
-```bash
-sudo tee /etc/systemd/system/clawgotchi-update.service >/dev/null <<'EOF'
-[Unit]
-Description=Clawgotchi Update Service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/clawgotchi-update.sh
-EOF
-```
-
-```bash
-sudo tee /etc/systemd/system/clawgotchi-update.timer >/dev/null <<'EOF'
-[Unit]
-Description=Clawgotchi Nightly Update Timer
-
-[Timer]
-OnCalendar=*-*-* 03:30:00
-Persistent=true
-Timezone=Europe/Berlin
-Unit=clawgotchi-update.service
-
-[Install]
-WantedBy=timers.target
-EOF
-```
-
-12. Dienste aktivieren und pruefen:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now clawgotchi.service
-sudo systemctl enable --now clawgotchi-update.timer
-sudo systemctl status clawgotchi.service
-sudo systemctl status clawgotchi-update.timer
-```
-
-## Waveshare ePaper Plugin (2.7" B/W)
-
-This project integrates the physical display as a plugin:
-
-- Plugin path: `plugins/hardware/waveshare_epaper_27bw`
-- Backend id: `waveshare_epaper_27bw`
-- Resolution: `264x176`, 1-bit black/white
-
-### Enable from Web UI
-
-1. Open `Settings`.
-2. In `Hardware`, select `Waveshare 2.7" ePaper HAT`.
-3. Click `Apply hardware backend`.
-
-What happens automatically:
-
-- Raspberry Pi detection
-- SPI check (`/dev/spidev0.0` or boot config)
-- SPI enable attempt via `raspi-config nonint do_spi 0`
-- Fallback boot-config patch (`dtparam=spi=on`) when needed
-- Driver initialization and two short test frames (`Clawgotchi ready`)
-
-### One-time sudoers rule (required if app runs as non-root and sudo -n is blocked)
-
-```bash
-sudo tee /etc/sudoers.d/clawgotchi-hw >/dev/null <<'EOF'
-clawgotchi ALL=(root) NOPASSWD: /usr/bin/raspi-config nonint do_spi 0, /usr/bin/tee /boot/config.txt, /usr/bin/tee /boot/firmware/config.txt, /usr/bin/systemctl start clawgotchi-update.service
-EOF
-sudo chmod 0440 /etc/sudoers.d/clawgotchi-hw
-```
-
-### CLI display test
-
-```bash
-python -m clawgotchi.tools.display_test --backend waveshare_epaper_27bw
-```
-
-If `clawgotchi.service` is running, the CLI test may fail because the service already holds GPIO/SPI resources.  
-Stop the service first, or run the test with `--force`.
-
-## Virtual Display Mirror
-
-The web UI dashboard (`/dashboard`) includes a centered virtual tamagotchi display shell that mirrors the exact framebuffer used for hardware rendering.
-
-- Shared framebuffer: `264x176`, `1-bit`
-- Hardware sinks and web mirror both consume the same framebuffer source
-- WebSocket updates on `/ws/display` with polling fallback in the browser
-- No separate display page is required
-- Four virtual input buttons map to the same input stream as hardware GPIO buttons: `NEXT`, `BACK`, `CONFIRM`, `SPECIAL`
-- Pet rendering uses sprite placement in the content viewport while the left sidebar menu remains always visible
-
-Display API endpoints:
-
-- `GET /api/display/capabilities` -> `{ "width": 264, "height": 176, "mode": "1bit" }`
-- `GET /api/display/frame.png` -> latest framebuffer image
-- `GET /api/display/frame.meta` -> `{ "version", "updated_at_ms", "width", "height" }`
-- `POST /api/input/button` -> publish virtual button input (`NEXT`, `BACK`, `CONFIRM`, `SPECIAL`)
-
-## Theme Authoring
-
-For a complete guide to creating sprite-based themes and legacy compatibility manifests, see `CONTRIBUTING.md`.
-
-## Updating
-
-Automatisches Update:
-
-- Der Timer `clawgotchi-update.timer` startet taeglich um `03:30` (Zeitzone `Europe/Berlin`) den Update-Service.
-- Update-Ablauf: `git fetch` -> `git checkout main` -> `git pull --ff-only` -> `pip install -e .` -> `systemctl restart clawgotchi.service` -> optional reboot when the update newly sets a reboot-required marker.
-
-Manuelles Update aus dem Projektverzeichnis:
-
-```bash
-./update.sh
-```
-
-Hinweis:
-
-- Das Skript bricht bei lokalen Git-Aenderungen bewusst ab (kein automatisches Merge).
-- Wenn `update.sh` ohne root ausgefuehrt wird, wird der Service nicht neu gestartet.
-- Git/SSH-Schritte laufen mit dem App-User `clawgotchi` (override via `CLWG_USER=<user>`).
-- Das Skript schreibt den Update-Status nach `${CLWG_UPDATE_STATUS_FILE:-/tmp/clawgotchi-update-status.env}` (genutzt vom Web-UI Polling).
-- Fuer Update inklusive Service-Neustart:
-
-```bash
-sudo ./update.sh
-```
-
-Manuell sofort ausfuehren:
-
-```bash
-sudo systemctl start clawgotchi-update.service
-```
-
-Update ueber Webinterface:
-
-- Unter `Settings` kann ein Update direkt gestartet werden.
-- Die Seite zeigt waehrend des Updates einen Ladezustand und pollt den Update-Status.
-- Bei Service-Restart/Reboot versucht die Seite automatisch zu reconnecten und zeigt danach wieder den finalen Status an.
-
-## Configuration
-
-### Installer-Variablen (`install.sh`)
-
-- `CLWG_USER`: Linux-Benutzer fuer Betrieb und Git-Updates.
-- `CLWG_GIT_SSH_URL`: SSH-Repository-URL (Pflichtwert).
-- `CLWG_GIT_HOST`: Git-Host fuer `ssh-keyscan` und SSH-Test (optional, wird wenn moeglich aus URL abgeleitet).
-- `CLWG_UPDATE_TIME`: Uhrzeit fuer den Timer im Format `HH:MM` (Default `03:30`).
-- `CLWG_DRYRUN=1`: Nur anzeigen, nichts ausfuehren.
-- `CLWG_SKIP_SSH_TEST=1`: SSH-Test nach Deploy-Key-Einrichtung ueberspringen (nur wenn bewusst gewuenscht).
-
-### Laufzeit-Konfiguration der App
-
-- `.env` mit Prefix `CLAW_` (siehe `.env.example`)
-- `config/defaults.toml` als Standardkonfiguration
-- Typische Werte: `CLAW_HOST`, `CLAW_PORT`, `CLAW_DATABASE_URL`, `CLAW_PLUGIN_DIRECTORY`, `CLAW_THEME_DIRECTORY`, `CLAW_DISPLAY_SPI_BUS`, `CLAW_DISPLAY_SPI_DEVICE`, `CLAW_DISPLAY_GPIO_DC_PIN`, `CLAW_DISPLAY_GPIO_RST_PIN`, `CLAW_DISPLAY_GPIO_BUSY_PIN`, `CLAW_DISPLAY_GPIO_CS_PIN`
-
-## Betrieb und Verifikation
-
-Service- und Timer-Status:
-
-```bash
-sudo systemctl status clawgotchi.service
-sudo systemctl status clawgotchi-update.timer
-```
-
-Logs:
-
-```bash
-journalctl -u clawgotchi -f
-journalctl -u clawgotchi-update.service -n 50
-```
-
-REST-Weboberflaeche:
-
-- `http://<RASPBERRY_PI_IP>:8000/`
-- API-Dokumentation: `http://<RASPBERRY_PI_IP>:8000/docs`
-
-## Troubleshooting
-
-### `Permission denied: /dev/spidev0.0`
-
-- Verify that SPI is enabled and the device node exists:
-
-```bash
-ls -l /dev/spidev0.0
-```
-
-- Make sure the `clawgotchi` user can access the SPI device group on your OS image.
-- If backend activation reports a privilege error, add the one-time sudoers snippet from the `Waveshare ePaper Plugin` section.
-- Ensure the runtime user is in both hardware groups:
-
-```bash
-sudo usermod -aG spi,gpio clawgotchi
-id clawgotchi
-```
-
-### `No module named 'epaper'` or `No module named 'waveshare_epd'`
-
-- Install or upgrade the Waveshare packages in the app venv:
-
-```bash
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -m pip install --upgrade waveshare-epaper gpiozero
-```
-
-- Verify import:
-
-```bash
-sudo -u clawgotchi /opt/clawgotchi/.venv/bin/python -c "import epaper, gpiozero; print('ok')"
-```
-
-- Restart service:
-
-```bash
-sudo systemctl restart clawgotchi.service
-```
-
-- Optional: if your image provides a stable `python3-lgpio` package and you still see GPIO edge-detection issues, install:
-
-```bash
-sudo apt-get install -y python3-lgpio
-```
-
-### SPI not enabled automatically
-
-- Run:
-
-```bash
-sudo raspi-config nonint do_spi 0
-```
-
-- Confirm one of these contains `dtparam=spi=on`:
-  - `/boot/config.txt`
-  - `/boot/firmware/config.txt`
-- Reboot after changing boot config:
-
-```bash
-sudo reboot
-```
-
-### BUSY pin stuck or wrong display model
-
-- Symptoms:
-  - refresh never completes
-  - initialization fails repeatedly
-  - ghosting/no visible frame updates
-  - `Failed to add edge detection`
-- Check wiring (BCM defaults expected by this plugin):
-  - `DC=25`
-  - `RST=17`
-  - `BUSY=24`
-  - `CS=8`
-- Ensure the panel model is Waveshare 2.7" B/W (264x176). Using a different panel with this backend will fail.
-- If `Failed to add edge detection` appears, stop `clawgotchi.service`, verify no other process uses GPIO pins, then retry.
-
-### Service does not start
-
-- Read recent service logs:
-
-```bash
-journalctl -u clawgotchi -n 100 --no-pager
-sudo systemctl status clawgotchi.service
-```
-
-- Common causes: failed `pip install -e .`, incorrect permissions under `/opt/clawgotchi`, broken Python venv.
+- Architecture: `docs/ARCHITECTURE.md`
+- Design system: `docs/DESIGN.md`
+- Theme authoring: `CONTRIBUTING.md`

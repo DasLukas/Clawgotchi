@@ -52,7 +52,7 @@ Reusable class components in CSS:
 {% from "components.html" import section_header, code_block, feature_card, badge %}
 
 {{ section_header("Quick Start", "Bootstrap from terminal", "quick-start") }}
-{{ code_block("$ ./install.sh\n$ sudo systemctl enable --now clawgotchi.service", "Bootstrap Commands") }}
+{{ code_block("$ curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install | bash\n$ clawgotchi", "Bootstrap Commands") }}
 
 <div class="feature-grid">
   {{ feature_card("Plugins", "Enable runtime skills.", "Open", "/plugins") }}

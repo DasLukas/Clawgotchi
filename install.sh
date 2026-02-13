@@ -11,6 +11,7 @@ set -Eeuo pipefail
 # Supports interactive and non-interactive execution.
 # Dry-run mode: CLWG_DRYRUN=1 ./install.sh
 
+INSTALLER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="/opt/clawgotchi"
 VENV_PATH="${PROJECT_ROOT}/.venv"
 SERVICE_FILE="/etc/systemd/system/clawgotchi.service"
@@ -34,6 +35,11 @@ SELECTED_GROUP=""
 SELECTED_HOME=""
 HARDWARE_SUPPLEMENTARY_GROUPS=""
 INPUT_FD=0
+
+if [[ "${1:-}" == "--bootstrap" ]]; then
+  shift
+  exec "${INSTALLER_ROOT}/scripts/install_bootstrap.sh" "$@"
+fi
 
 log() {
   printf "[%s] %s\n" "$(date "+%Y-%m-%d %H:%M:%S")" "$*"
@@ -707,6 +713,14 @@ print_final_summary() {
 }
 
 main() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    if [[ -x "${INSTALLER_ROOT}/scripts/install_bootstrap.sh" ]]; then
+      warn "Root privileges were not provided. Delegating to cross-platform user installer."
+      exec "${INSTALLER_ROOT}/scripts/install_bootstrap.sh" "$@"
+    fi
+    die "Please run as root (example: curl ... | sudo bash)."
+  fi
+
   require_root
   check_platform
   init_prompt_input

@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+DEFAULT_REPO_URL="https://github.com/DasLukas/Clawgotchi.git"
+DEFAULT_BRANCH="main"
+
+REPO_URL="${CLAW_REPO_URL:-${DEFAULT_REPO_URL}}"
+BRANCH="${CLAW_BRANCH:-${DEFAULT_BRANCH}}"
+SOURCE_ROOT=""
+DRY_RUN=0
+SYSTEMD_REQUESTED=0
+
+log() {
+  printf "[clawgotchi-install] %s\n" "$*"
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: install_bootstrap.sh [options]
+
+Options:
+  --repo-url <url>      Override repository URL.
+  --branch <name>       Override git branch to install (default: main).
+  --source-root <path>  Override source checkout location.
+  --systemd             Request optional Raspberry Pi systemd/SPI guidance.
+  --dry-run             Print actions without changing the system.
+  -h, --help            Show this help message.
+EOF
+}
+
+run() {
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    log "DRY-RUN $*"
+    return 0
+  fi
+  "$@"
+}
+
+require_command() {
+  local command_name="$1"
+  local install_hint="$2"
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    die "${command_name} is required. ${install_hint}"
+  fi
+}
+
+check_python_version() {
+  if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+    die "Python 3.11+ is required. Install Python 3.11+ and rerun."
+  fi
+}
+
+is_raspberry_pi() {
+  [[ -f "/proc/device-tree/model" ]] && grep -qi "Raspberry Pi" /proc/device-tree/model
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo-url)
+        [[ $# -ge 2 ]] || die "--repo-url requires a value."
+        REPO_URL="$2"
+        shift 2
+        ;;
+      --branch)
+        [[ $# -ge 2 ]] || die "--branch requires a value."
+        BRANCH="$2"
+        shift 2
+        ;;
+      --source-root)
+        [[ $# -ge 2 ]] || die "--source-root requires a value."
+        SOURCE_ROOT="$2"
+        shift 2
+        ;;
+      --systemd)
+        SYSTEMD_REQUESTED=1
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+resolve_source_root() {
+  if [[ -n "${SOURCE_ROOT}" ]]; then
+    printf "%s" "${SOURCE_ROOT}"
+    return 0
+  fi
+
+  local xdg_data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+  printf "%s" "${xdg_data_home}/clawgotchi/src"
+}
+
+sync_repository() {
+  local source_root="$1"
+  if [[ -d "${source_root}/.git" ]]; then
+    log "Updating existing source checkout in ${source_root}"
+    run git -C "${source_root}" remote set-url origin "${REPO_URL}"
+    run git -C "${source_root}" fetch --prune origin
+    run git -C "${source_root}" checkout "${BRANCH}"
+    run git -C "${source_root}" pull --ff-only origin "${BRANCH}"
+    return 0
+  fi
+
+  if [[ -e "${source_root}" && -n "$(ls -A "${source_root}" 2>/dev/null || true)" ]]; then
+    die "Source root exists and is not an empty git checkout: ${source_root}"
+  fi
+
+  local parent_dir
+  parent_dir="$(dirname "${source_root}")"
+  run mkdir -p "${parent_dir}"
+  log "Cloning repository into ${source_root}"
+  run git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${source_root}"
+}
+
+offer_pi_systemd_path() {
+  local source_root="$1"
+  if ! is_raspberry_pi; then
+    return 0
+  fi
+
+  if [[ "${SYSTEMD_REQUESTED}" == "1" ]]; then
+    log "Raspberry Pi systemd/SPI setup requested."
+    if [[ "${DRY_RUN}" == "1" ]]; then
+      log "DRY-RUN sudo bash '${source_root}/install.sh'"
+      return 0
+    fi
+    log "Running legacy Raspberry Pi installer for systemd/SPI provisioning."
+    sudo bash "${source_root}/install.sh"
+    return 0
+  fi
+
+  log "Raspberry Pi detected. Desktop bootstrap is complete."
+  if [[ -t 0 ]]; then
+    local answer=""
+    read -r -p "Run optional legacy Pi systemd/SPI installer now? [y/N]: " answer || true
+    if [[ "${answer}" =~ ^[Yy]$ ]]; then
+      if [[ "${DRY_RUN}" == "1" ]]; then
+        log "DRY-RUN sudo bash '${source_root}/install.sh'"
+      else
+        sudo bash "${source_root}/install.sh"
+      fi
+    else
+      log "Skipped optional Pi systemd/SPI provisioning."
+    fi
+  else
+    log "To configure Pi SPI/systemd later, run: sudo bash '${source_root}/install.sh'"
+  fi
+}
+
+main() {
+  parse_args "$@"
+
+  local uname_s
+  uname_s="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  if [[ "${uname_s}" == "darwin" ]]; then
+    require_command "git" "Install with: brew install git"
+    require_command "python3" "Install with: brew install python@3.11"
+  else
+    require_command "git" "Install using your package manager (for example: sudo apt install git)."
+    require_command "python3" "Install Python 3.11+ using your package manager."
+  fi
+  check_python_version
+
+  local source_root
+  source_root="$(resolve_source_root)"
+  source_root="${source_root/#\~/${HOME}}"
+
+  sync_repository "${source_root}"
+
+  local common_install_script="${source_root}/scripts/common_install.py"
+  [[ -f "${common_install_script}" ]] || die "Missing installer helper: ${common_install_script}"
+
+  local install_args=(
+    "${common_install_script}"
+    "--repo-root" "${source_root}"
+    "--repo-url" "${REPO_URL}"
+  )
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    install_args+=("--dry-run")
+  fi
+  if [[ "${SYSTEMD_REQUESTED}" == "1" ]]; then
+    install_args+=("--systemd")
+  fi
+
+  run python3 "${install_args[@]}"
+  offer_pi_systemd_path "${source_root}"
+}
+
+main "$@"

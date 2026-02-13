@@ -5,8 +5,31 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE="${CLWG_REMOTE:-origin}"
 REMOTE_URL="${CLWG_REMOTE_URL:-}"
 BRANCH="${CLWG_BRANCH:-main}"
-VENV_DIR="${PROJECT_ROOT}/.venv"
-VENV_PYTHON="${VENV_DIR}/bin/python"
+resolve_default_runtime_home() {
+  if [[ -n "${CLAW_RUNTIME_HOME:-}" ]]; then
+    printf "%s" "${CLAW_RUNTIME_HOME}"
+    return 0
+  fi
+  case "${OSTYPE:-}" in
+    darwin*)
+      printf "%s" "${HOME}/Library/Application Support/Clawgotchi"
+      ;;
+    *)
+      printf "%s" "${XDG_DATA_HOME:-${HOME}/.local/share}/clawgotchi"
+      ;;
+  esac
+}
+
+RUNTIME_HOME="$(resolve_default_runtime_home)"
+VENV_DIR="${CLAW_VENV_PATH:-${PROJECT_ROOT}/.venv}"
+if [[ ! -x "${VENV_DIR}/bin/python" && -x "${RUNTIME_HOME}/venv/bin/python" ]]; then
+  VENV_DIR="${RUNTIME_HOME}/venv"
+fi
+if [[ -x "${VENV_DIR}" ]]; then
+  VENV_PYTHON="${VENV_DIR}"
+else
+  VENV_PYTHON="${VENV_DIR}/bin/python"
+fi
 SERVICE_NAME="${CLWG_SERVICE_NAME:-clawgotchi.service}"
 APP_USER="${CLWG_USER:-clawgotchi}"
 STATUS_FILE="${CLWG_UPDATE_STATUS_FILE:-/tmp/clawgotchi-update-status.env}"

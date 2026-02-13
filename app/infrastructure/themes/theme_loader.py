@@ -124,28 +124,51 @@ class ThemeManifest(BaseModel):
 
 
 class ThemeLoader:
-    def __init__(self, themes_root: Path) -> None:
-        self._themes_root = themes_root
+    """Load theme metadata and assets from ordered theme roots.
+
+    Runtime theme roots can override built-in themes when IDs collide.
+    """
+
+    def __init__(self, themes_roots: Path | list[Path] | tuple[Path, ...]) -> None:
+        if isinstance(themes_roots, Path):
+            roots = [themes_roots]
+        else:
+            roots = list(themes_roots)
+
+        deduplicated: list[Path] = []
+        seen: set[str] = set()
+        for root in roots:
+            resolved = root.expanduser().resolve()
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(resolved)
+
+        self._themes_roots = tuple(deduplicated)
         self._manifest_cache: dict[str, ThemeManifest] = {}
+        self._manifest_root_by_id: dict[str, Path] = {}
         self._frame_cache: dict[str, Image.Image] = {}
 
     def load(self, theme_id: str) -> ThemeManifest:
         if theme_id in self._manifest_cache:
             return self._manifest_cache[theme_id]
 
-        manifest_path = self._themes_root / theme_id / "manifest.json"
-        if not manifest_path.exists():
-            raise FileNotFoundError(f"Theme manifest was not found: {manifest_path}")
+        manifest_path, theme_root = self._resolve_manifest_path(theme_id)
+        if manifest_path is None or theme_root is None:
+            searched_roots = ", ".join(str(root) for root in self._themes_roots)
+            raise FileNotFoundError(f"Theme manifest was not found for '{theme_id}'. Searched: {searched_roots}")
 
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest = ThemeManifest.model_validate(payload)
+        self._manifest_root_by_id[theme_id] = theme_root
         self._validate_manifest_assets(theme_id=theme_id, manifest=manifest)
         self._manifest_cache[theme_id] = manifest
         return manifest
 
     def load_frame(self, path: str) -> Image.Image:
         requested_path = Path(path)
-        resolved = requested_path if requested_path.is_absolute() else self._themes_root / requested_path
+        resolved = requested_path if requested_path.is_absolute() else self._resolve_relative_frame_path(requested_path)
         cache_key = str(resolved.resolve())
 
         if cache_key in self._frame_cache:
@@ -163,14 +186,47 @@ class ThemeLoader:
     def invalidate_cache(self, theme_id: str | None = None) -> None:
         if theme_id is None:
             self._manifest_cache.clear()
+            self._manifest_root_by_id.clear()
             self._frame_cache.clear()
             return
 
         self._manifest_cache.pop(theme_id, None)
-        prefix = str((self._themes_root / theme_id).resolve())
+        self._manifest_root_by_id.pop(theme_id, None)
+        prefixes = [str((root / theme_id).resolve()) for root in self._themes_roots]
         for key in list(self._frame_cache.keys()):
-            if key.startswith(prefix):
+            if any(key.startswith(prefix) for prefix in prefixes):
                 self._frame_cache.pop(key, None)
+
+    def _resolve_manifest_path(self, theme_id: str) -> tuple[Path | None, Path | None]:
+        for root in self._themes_roots:
+            manifest_path = root / theme_id / "manifest.json"
+            if manifest_path.exists():
+                return manifest_path, root
+        return None, None
+
+    def _resolve_relative_frame_path(self, requested_path: Path) -> Path:
+        if not requested_path.parts:
+            raise FileNotFoundError("Theme frame path is empty.")
+
+        theme_id = requested_path.parts[0]
+        manifest_root = self._manifest_root_by_id.get(theme_id)
+        if manifest_root is None:
+            _, manifest_root = self._resolve_manifest_path(theme_id)
+            if manifest_root is not None:
+                self._manifest_root_by_id[theme_id] = manifest_root
+
+        if manifest_root is not None:
+            candidate = manifest_root / requested_path
+            if candidate.exists():
+                return candidate
+
+        for root in self._themes_roots:
+            candidate = root / requested_path
+            if candidate.exists():
+                return candidate
+
+        searched_roots = ", ".join(str(root) for root in self._themes_roots)
+        raise FileNotFoundError(f"Theme frame was not found: {requested_path}. Searched: {searched_roots}")
 
     def _validate_manifest_assets(self, theme_id: str, manifest: ThemeManifest) -> None:
         for animation in manifest.animations.values():

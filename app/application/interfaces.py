@@ -11,6 +11,22 @@ from app.domain.value_objects import PetCommand
 
 @dataclass(slots=True)
 class PluginManifest:
+    """Filesystem plugin manifest normalized for runtime consumption.
+
+    Attributes:
+        plugin_id: Stable plugin identifier.
+        name: Human-readable plugin name.
+        version: Semantic-ish plugin version string.
+        description: Optional plugin description.
+        entrypoint: Python module filename relative to plugin directory.
+        class_name: Plugin class exported by the entrypoint.
+        directory: Plugin directory relative to `source_root`.
+        source_root: Absolute root directory where plugin was discovered.
+        source_kind: Discovery origin label (`runtime` or `builtin`).
+        capabilities: Optional capability list.
+        metadata: Additional manifest keys not modeled explicitly.
+    """
+
     plugin_id: str
     name: str
     version: str
@@ -18,6 +34,8 @@ class PluginManifest:
     entrypoint: str
     class_name: str
     directory: str
+    source_root: str = ""
+    source_kind: str = "runtime"
     capabilities: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -30,6 +48,8 @@ class PluginManifest:
             "entrypoint": self.entrypoint,
             "class_name": self.class_name,
             "directory": self.directory,
+            "source_root": self.source_root,
+            "source_kind": self.source_kind,
             "capabilities": list(self.capabilities),
             "metadata": dict(self.metadata),
         }
@@ -37,12 +57,27 @@ class PluginManifest:
 
 @dataclass(slots=True)
 class ThemeManifest:
+    """Filesystem theme manifest normalized for runtime consumption.
+
+    Attributes:
+        theme_id: Stable theme identifier.
+        name: Human-readable theme name.
+        version: Theme version string.
+        description: Optional theme description.
+        preview: Optional preview image path relative to theme root.
+        stylesheet: CSS path relative to theme root.
+        source_root: Absolute root directory where theme was discovered.
+        source_kind: Discovery origin label (`runtime` or `builtin`).
+    """
+
     theme_id: str
     name: str
     version: str
     description: str
     preview: str
     stylesheet: str
+    source_root: str = ""
+    source_kind: str = "runtime"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +87,8 @@ class ThemeManifest:
             "description": self.description,
             "preview": self.preview,
             "stylesheet": self.stylesheet,
+            "source_root": self.source_root,
+            "source_kind": self.source_kind,
         }
 
 

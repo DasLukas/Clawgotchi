@@ -30,11 +30,13 @@ Top-level directories and key files:
 - `themes/`: Theme packages (`manifest.json` + assets).
 - `docs/`: Project documentation (`ARCHITECTURE.md`, `DESIGN.md`).
 - `config/`: Runtime defaults and display settings model.
-- `clawgotchi/tools/`: CLI utility (`display_test.py`) for backend diagnostics.
+- `clawgotchi/tools/`: CLI utilities (`display_test.py`, `doctor.py`, `plugin_deps.py`).
 - `tests/`: Unit/integration tests for API, rendering, plugins, theme loading, SPI helper, UI flows.
+- `install`, `install.ps1`: One-line bootstrap entrypoints for Unix-like shells and Windows PowerShell.
 - `install.sh`, `update.sh`: Raspberry Pi install/update automation and systemd integration.
+- `scripts/install_bootstrap.sh`, `scripts/install_bootstrap.ps1`, `scripts/common_install.py`: Cross-platform user-space bootstrap installation.
 - `CONTRIBUTING.md`: Contributor workflow and architecture-doc maintenance rules.
-- `clawgotchi.db`: Default SQLite database file at repo root.
+- Runtime data is stored in per-user runtime home (not repo root).
 
 Main runtime/entrypoint:
 - `main.py`
@@ -50,7 +52,7 @@ Web interface location:
 - Web routes: `app/presentation/web.py`
 - Templates: `app/presentation/templates/*.html`
 - Static assets: `app/presentation/static/*`
-- Served from app mounts in `main.py` (`/static`, `/theme-assets`)
+- Served from app mounts/routes in `main.py` (`/static`, `/theme-assets/{asset_path:path}` with multi-root lookup)
 
 State persistence location:
 - DB bootstrap: `app/infrastructure/database.py`
@@ -90,7 +92,7 @@ Tests and scripts:
 
 ## 4. Runtime model (how the app starts)
 Startup flow:
-1. `main.py:create_app()` resolves config (`ConfigResolver`) and ensures plugin/theme directories exist.
+1. `main.py:create_app()` resolves config (`ConfigResolver`), validates runtime home writability, and ensures runtime directories exist.
 2. FastAPI lifespan creates `ApplicationContainer` (`app/container.py`).
 3. `ApplicationContainer.__init__`:
 - Creates DB schema.
@@ -240,7 +242,7 @@ curl -s -X POST http://localhost:8000/api/input/button \
 - Template directory: `app/presentation/templates/`.
 - Static assets mounted in `main.py`:
   - `/static` -> `app/presentation/static`
-  - `/theme-assets` -> configured theme directory
+- `/theme-assets/{asset_path:path}` -> first matching file across configured theme roots (runtime first, built-in fallback)
 
 ### Key screens/components (init, dashboard card, menu controls)
 - Setup/init flow:
@@ -305,8 +307,9 @@ Sidebar renderer (`MenuSidebarRenderer`):
 ## 9. Plugin system
 ### Plugin packaging (zip/git/plugin manager ready: planned vs implemented)
 Implemented now:
-- Filesystem plugin discovery by scanning `manifest.json` files under plugin directory recursively.
+- Filesystem plugin discovery by scanning `manifest.json` files across ordered plugin roots (runtime first, built-in fallback).
 - Runtime enable/disable/rescan through service + web actions.
+- Plugin dependency helper CLI installs into managed runtime virtualenv: `python -m clawgotchi.tools.plugin_deps install <plugin_id>`.
 
 Not implemented yet:
 - Zip installer, Git-based plugin fetcher, or dedicated plugin package manager workflow.
@@ -325,10 +328,12 @@ Required in practice:
 Optional/common:
 - `description`
 - `capabilities` (list)
+- `python_dependencies` (list of pip requirement specifiers used by `plugin_deps` helper)
 - extra keys are kept in `metadata` (for example `hardware_profiles`)
 
 ### discovery/loading lifecycle
 1. Scan manifests on startup/rescan (`PluginService.rescan()`).
+   - Duplicate plugin IDs are resolved by root order (runtime overrides built-in).
 2. Persist manifests in DB (`plugins` table).
 3. Set runtime manifest registry.
 4. Synchronize enabled plugin instances:
@@ -367,6 +372,10 @@ Theme manifest model (`app/infrastructure/themes/theme_loader.py`) supports:
 Current built-in themes:
 - `themes/default/manifest.json` (sprite mode)
 - `themes/classic/manifest.json` (legacy fullframe mode)
+
+Theme discovery/loading behavior:
+- Theme manifests are scanned across ordered theme roots (runtime first, built-in fallback).
+- Theme assets are resolved through the same ordered roots.
 
 ### Placement/anchor rules
 Sprite placement is resolved by `PetSpriteRenderer`:
@@ -411,7 +420,9 @@ OS/runtime expectations:
 - optional sudoers policy for non-interactive SPI enabling and update service start
 
 Install handling:
-- `install.sh` installs package dependencies, configures SPI/systemd/update timer.
+- `scripts/install_bootstrap.sh` and `scripts/install_bootstrap.ps1` perform cross-platform user-space installation/update without system directories.
+- Shared bootstrap logic in `scripts/common_install.py` creates runtime home, venv, launchers, and runtime `.env`.
+- `install.sh` remains available for optional Raspberry Pi SPI/systemd provisioning.
 - Waveshare driver (`plugins/hardware/waveshare_epaper_27bw/driver.py`) performs runtime SPI checks and best-effort enablement via `PiSpiManager`.
 
 ### Diagnostics / logging approach for hardware
@@ -426,7 +437,8 @@ Install handling:
 ## 12. State persistence & export/import
 ### Storage location and format (json/sqlite/etc.)
 Default persistence:
-- SQLite database URL default: `sqlite:///./clawgotchi.db`
+- SQLite database URL default: runtime-home scoped absolute path
+  - example (Unix): `sqlite:////home/<user>/.local/share/clawgotchi/db/clawgotchi.db`
 - Tables:
   - `current_state`
   - `state_snapshots`
@@ -475,8 +487,8 @@ Primary files:
 
 Key env vars:
 - App/network: `CLAW_APP_NAME`, `CLAW_HOST`, `CLAW_PORT`, `CLAW_LOG_LEVEL`
-- Runtime: `CLAW_TICK_INTERVAL_SECONDS`, `CLAW_DATABASE_URL`
-- Paths: `CLAW_PLUGIN_DIRECTORY`, `CLAW_THEME_DIRECTORY`, `CLAW_CONFIG_FILE`
+- Runtime: `CLAW_RUNTIME_HOME`, `CLAW_TICK_INTERVAL_SECONDS`, `CLAW_DATABASE_URL`
+- Paths: `CLAW_PLUGIN_DIRECTORY`, `CLAW_THEME_DIRECTORY`, `CLAW_PLUGIN_DIRECTORIES`, `CLAW_THEME_DIRECTORIES`, `CLAW_CONFIG_FILE`, `CLAW_ENV_FILE`
 - Security: `CLAW_API_KEY`
 - Display/GPIO/SPI: `CLAW_DISPLAY_*`, `CLAW_BUTTON_GPIO_*`
 
@@ -485,11 +497,21 @@ Default examples are documented in:
 - `config/defaults.toml`
 - `.env.example`
 
+Runtime home defaults:
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/clawgotchi`
+- macOS: `~/Library/Application Support/Clawgotchi`
+- Windows: `%LOCALAPPDATA%\\Clawgotchi`
+
 ## 14. Observability & operations
 ### How to run locally
 Typical local run:
 ```bash
 python main.py
+```
+
+Installed launcher run:
+```bash
+clawgotchi
 ```
 
 Tests:
@@ -498,12 +520,13 @@ pytest
 ```
 
 ### How to run on Raspberry Pi (service, systemd if used)
-Install script provisions:
+Optional Pi provisioning script (`install.sh`) provisions:
 - `clawgotchi.service` for app runtime
 - `clawgotchi-update.service` + `clawgotchi-update.timer` for nightly updates
 
 Update workflow:
-- `./update.sh` (manual)
+- rerun bootstrap installer one-liner (cross-platform, idempotent)
+- `./update.sh` (manual, supports runtime venv fallback)
 - or systemd timer/service managed update
 
 ### Logging locations
@@ -524,12 +547,9 @@ Optional websocket monitoring:
 
 ## 15. Development workflow
 ### Branching model (main = publish, dev branch = development)
-Current repository state:
-- Existing branch detected: `main`
-- No `dev` branch found in local refs.
-
-Planned:
-- If the team adopts `main` (publish) + `dev` (integration), this policy should be added explicitly to contributor documentation.
+Branch policy:
+- `main`: publish/release branch
+- `dev`: development/integration branch
 
 ### Formatting/linting/test commands
 Configured now:
@@ -540,12 +560,13 @@ Not implemented yet:
 
 ### How to add plugins/themes
 Plugins:
-1. Add folder under plugin directory (default `plugins/`) with `manifest.json` and entrypoint module/class.
+1. Add folder under runtime plugin directory (default `<runtime_home>/plugins`) with `manifest.json` and entrypoint module/class.
 2. Rescan via `/plugins/rescan` or service-level rescan on startup.
 3. Enable plugin via `/plugins/{plugin_id}/enable` or setup flow.
+4. If plugin declares `python_dependencies`, install into runtime venv via `python -m clawgotchi.tools.plugin_deps install <plugin_id>`.
 
 Themes:
-1. Add folder under theme directory (default `themes/`) with `manifest.json` and assets.
+1. Add folder under runtime theme directory (default `<runtime_home>/themes`) with `manifest.json` and assets.
 2. Rescan via `/themes/rescan`.
 3. Activate via `/themes/{theme_id}/activate` or setup flow.
 

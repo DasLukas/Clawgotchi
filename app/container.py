@@ -24,7 +24,12 @@ from app.application.services import (
     TickLoopService,
 )
 from app.application.ui.menu_controller import MenuController
-from app.config import ConfigResolver, RuntimeConfig
+from app.config import (
+    ConfigResolver,
+    RuntimeConfig,
+    assert_runtime_home_writable,
+    ensure_runtime_layout,
+)
 from app.infrastructure.database import Database
 from app.infrastructure.display.dummy import DummyDisplayDriver
 from app.infrastructure.display.sinks import DisplayDriverSink
@@ -69,6 +74,8 @@ class ApplicationContainer:
     def __init__(self, config_overrides: dict | None = None) -> None:
         resolver = ConfigResolver(extra_overrides=config_overrides)
         bootstrap_config = resolver.resolve()
+        ensure_runtime_layout(bootstrap_config.runtime_home)
+        assert_runtime_home_writable(bootstrap_config.runtime_home)
 
         self.database = Database(bootstrap_config.database_url)
         self.database.create_schema()
@@ -101,9 +108,9 @@ class ApplicationContainer:
         self.plugin_repository = SqlAlchemyPluginRepository(self.database.session_factory)
         self.theme_repository = SqlAlchemyThemeRepository(self.database.session_factory)
 
-        self.plugin_loader = FileSystemPluginLoader(self.config.plugin_directory)
-        self.theme_loader = FileSystemThemeLoader(self.config.theme_directory)
-        self.theme_asset_loader = ThemeLoader(self.config.theme_directory)
+        self.plugin_loader = FileSystemPluginLoader(self.config.plugin_directories)
+        self.theme_loader = FileSystemThemeLoader(self.config.theme_directories)
+        self.theme_asset_loader = ThemeLoader(self.config.theme_directories)
 
         self.display_manager = DisplayManager()
         self._display_update_condition = asyncio.Condition()
@@ -216,6 +223,11 @@ class ApplicationContainer:
         }
 
     def _ensure_directories(self) -> None:
+        ensure_runtime_layout(self.config.runtime_home)
+        assert_runtime_home_writable(self.config.runtime_home)
+        self.config.logs_directory.mkdir(parents=True, exist_ok=True)
+        self.config.cache_directory.mkdir(parents=True, exist_ok=True)
+        self.config.config_directory.mkdir(parents=True, exist_ok=True)
         self.config.plugin_directory.mkdir(parents=True, exist_ok=True)
         self.config.theme_directory.mkdir(parents=True, exist_ok=True)
 
