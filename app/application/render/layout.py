@@ -7,9 +7,9 @@ from app.application.ports.display import DisplayCapabilities
 
 @dataclass(slots=True)
 class LayoutConfig:
-    menu_bar_ratio: float = 0.22
-    menu_bar_min_height: int = 28
-    menu_bar_max_height: int = 48
+    menu_bar_ratio: float = 0.10
+    menu_bar_min_height: int = 12
+    menu_bar_max_height: int = 18
 
 
 @dataclass(slots=True)

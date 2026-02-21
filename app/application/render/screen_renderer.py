@@ -20,7 +20,7 @@ class RenderPayload:
 
 
 class MenuBarRenderer:
-    def __init__(self, horizontal_padding: int = 3, slot_gap: int = 2, min_slot_width: int = 24) -> None:
+    def __init__(self, horizontal_padding: int = 2, slot_gap: int = 2, min_slot_width: int = 16) -> None:
         self._horizontal_padding = max(1, horizontal_padding)
         self._slot_gap = max(1, slot_gap)
         self._min_slot_width = max(10, min_slot_width)
@@ -56,35 +56,35 @@ class MenuBarRenderer:
         slot_width = max(1, (inner_width - gaps_total) // visible_count)
         used_width = visible_count * slot_width + gaps_total
         cursor_x = inner_x0 + max(0, (inner_width - used_width) // 2)
+        center_y = y0 + max(2, (menu.h // 2))
 
         for idx, item_label in enumerate(visible_items):
             absolute_index = start_index + idx
             selected = absolute_index == snapshot.selection_index
             slot_x0 = cursor_x
             slot_x1 = min(x1 - 1, slot_x0 + slot_width - 1)
-            slot_y0 = y0 + 1
-            slot_y1 = y1 - 1
+
+            icon_half = max(2, min(3, (menu.h - 5) // 2))
+            icon_cx = slot_x0 + max(2, (slot_x1 - slot_x0) // 2)
+            icon_bounds = (
+                icon_cx - icon_half,
+                center_y - icon_half,
+                icon_cx + icon_half,
+                center_y + icon_half,
+            )
+            self._draw_item_icon(draw, item_label=item_label, bounds=icon_bounds, selected=selected)
 
             if selected:
-                draw.rectangle((slot_x0, slot_y0, slot_x1, slot_y1), fill=0)
-                icon_fill = 1
-            else:
-                draw.rectangle((slot_x0, slot_y0, slot_x1, slot_y1), fill=1, outline=0)
-                icon_fill = 0
+                marker_y = y1 - 1
+                marker_x0 = slot_x0 + 3
+                marker_x1 = slot_x1 - 3
+                if marker_x1 >= marker_x0:
+                    draw.line((marker_x0, marker_y, marker_x1, marker_y), fill=0, width=1)
 
-            icon_margin_x = max(2, slot_width // 5)
-            icon_margin_y = max(2, menu.h // 5)
-            icon_bounds = (
-                slot_x0 + icon_margin_x,
-                slot_y0 + icon_margin_y,
-                slot_x1 - icon_margin_x,
-                slot_y1 - icon_margin_y,
-            )
-            self._draw_item_icon(draw, item_label=item_label, bounds=icon_bounds, fill=icon_fill)
             cursor_x = slot_x1 + self._slot_gap + 1
 
         if start_index > 0:
-            left_marker_x = x0 + 1
+            left_marker_x = x0 + 2
             center_y = (y0 + y1) // 2
             draw.polygon(
                 (
@@ -96,7 +96,7 @@ class MenuBarRenderer:
             )
 
         if start_index + visible_count < len(snapshot.items):
-            right_marker_x = x1 - 1
+            right_marker_x = x1 - 2
             center_y = (y0 + y1) // 2
             draw.polygon(
                 (
@@ -108,18 +108,7 @@ class MenuBarRenderer:
             )
 
         if snapshot.notifications_count > 0:
-            badge_radius = 2
-            badge_cx = x1 - 5
-            badge_cy = y0 + 5
-            draw.ellipse(
-                (
-                    badge_cx - badge_radius,
-                    badge_cy - badge_radius,
-                    badge_cx + badge_radius,
-                    badge_cy + badge_radius,
-                ),
-                fill=0,
-            )
+            draw.point((x1 - 3, y0 + 2), fill=0)
 
     def _compute_max_visible_slots(self, menu_width: int) -> int:
         usable_width = max(1, menu_width - 2 * self._horizontal_padding)
@@ -138,56 +127,52 @@ class MenuBarRenderer:
         *,
         item_label: str,
         bounds: tuple[int, int, int, int],
-        fill: int,
+        selected: bool,
     ) -> None:
         x0, y0, x1, y1 = bounds
         if x1 <= x0 or y1 <= y0:
             return
 
         normalized = item_label.strip().lower()
-        state = ""
         if ":" in normalized:
-            normalized, state = normalized.split(":", 1)
-            normalized = normalized.strip()
-            state = state.strip()
+            normalized = normalized.split(":", 1)[0].strip()
+
+        stroke = 0
 
         if normalized.startswith("pet"):
-            self._draw_pet_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_pet_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("notify"):
-            self._draw_notify_icon(draw, x0, y0, x1, y1, fill, state == "off")
+            self._draw_notify_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("status"):
-            self._draw_status_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_status_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("feed"):
-            self._draw_feed_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_feed_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("play"):
-            self._draw_play_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_play_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("scratch"):
-            self._draw_scratch_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_scratch_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("sleep"):
-            self._draw_sleep_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_sleep_icon(draw, x0, y0, x1, y1, stroke)
             return
         if normalized.startswith("wake"):
-            self._draw_wake_icon(draw, x0, y0, x1, y1, fill)
+            self._draw_wake_icon(draw, x0, y0, x1, y1, stroke)
             return
 
-        draw.ellipse((x0 + 1, y0 + 1, x1 - 1, y1 - 1), outline=fill)
+        cx = (x0 + x1) // 2
+        cy = (y0 + y1) // 2
+        draw.point((cx, cy), fill=stroke)
+        if selected:
+            draw.ellipse((cx - 1, cy - 1, cx + 1, cy + 1), outline=stroke)
 
     @staticmethod
-    def _draw_pet_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
-        head_y0 = y0 + 2
-        head_y1 = y1 - 1
-        draw.ellipse((x0 + 1, head_y0, x1 - 1, head_y1), outline=fill)
-        draw.polygon(((x0 + 2, head_y0 + 1), (x0 + 5, y0), (x0 + 7, head_y0 + 2)), fill=fill)
-        draw.polygon(((x1 - 2, head_y0 + 1), (x1 - 5, y0), (x1 - 7, head_y0 + 2)), fill=fill)
-        eye_y = (head_y0 + head_y1) // 2
-        draw.point((x0 + 4, eye_y), fill=fill)
-        draw.point((x1 - 4, eye_y), fill=fill)
+    def _draw_pet_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
+        draw.ellipse((x0, y0, x1, y1), outline=stroke)
 
     @staticmethod
     def _draw_notify_icon(
@@ -196,56 +181,45 @@ class MenuBarRenderer:
         y0: int,
         x1: int,
         y1: int,
-        fill: int,
-        is_off: bool,
+        stroke: int,
     ) -> None:
-        bell_top = y0 + 1
-        bell_bottom = y1 - 2
-        draw.arc((x0 + 2, bell_top, x1 - 2, bell_bottom), start=185, end=355, fill=fill, width=1)
-        draw.line((x0 + 2, bell_bottom, x1 - 2, bell_bottom), fill=fill, width=1)
-        draw.ellipse((x0 + (x1 - x0) // 2 - 1, bell_bottom + 1, x0 + (x1 - x0) // 2 + 1, bell_bottom + 3), fill=fill)
-        if is_off:
-            draw.line((x0 + 1, y1 - 1, x1 - 1, y0 + 1), fill=fill, width=1)
+        cx = (x0 + x1) // 2
+        draw.polygon(((cx, y0), (x1, y1), (x0, y1)), outline=stroke)
 
     @staticmethod
-    def _draw_status_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
+    def _draw_status_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
         mid_x = (x0 + x1) // 2
-        draw.rectangle((x0 + 1, y1 - 3, x0 + 3, y1 - 1), fill=fill)
-        draw.rectangle((mid_x - 1, y1 - 5, mid_x + 1, y1 - 1), fill=fill)
-        draw.rectangle((x1 - 3, y1 - 7, x1 - 1, y1 - 1), fill=fill)
+        draw.line((x0, y1, x0, y0 + 2), fill=stroke, width=1)
+        draw.line((mid_x, y1, mid_x, y0 + 1), fill=stroke, width=1)
+        draw.line((x1, y1, x1, y0), fill=stroke, width=1)
 
     @staticmethod
-    def _draw_feed_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
-        rim_y = y0 + 3
-        bowl_bottom = y1 - 2
-        draw.line((x0 + 2, rim_y, x1 - 2, rim_y), fill=fill, width=1)
-        draw.arc((x0 + 2, rim_y - 1, x1 - 2, bowl_bottom), start=10, end=170, fill=fill, width=1)
+    def _draw_feed_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
+        mid_y = (y0 + y1) // 2
+        draw.line((x0, mid_y, x1, mid_y), fill=stroke, width=1)
+        draw.arc((x0, mid_y - 1, x1, y1 + 1), start=10, end=170, fill=stroke, width=1)
 
     @staticmethod
-    def _draw_play_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
-        draw.polygon(((x0 + 2, y0 + 1), (x1 - 2, (y0 + y1) // 2), (x0 + 2, y1 - 1)), fill=fill)
+    def _draw_play_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
+        draw.polygon(((x0, y0), (x1, (y0 + y1) // 2), (x0, y1)), fill=stroke)
 
     @staticmethod
-    def _draw_scratch_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
-        draw.line((x0 + 1, y0 + 1, x1 - 1, y1 - 1), fill=fill, width=1)
-        draw.line((x0 + 1, y1 - 1, x1 - 1, y0 + 1), fill=fill, width=1)
-        draw.line((x0 + 1, (y0 + y1) // 2, x1 - 1, (y0 + y1) // 2), fill=fill, width=1)
+    def _draw_scratch_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
+        draw.line((x0, y0, x1, y1), fill=stroke, width=1)
+        draw.line((x0, y1, x1, y0), fill=stroke, width=1)
 
     @staticmethod
-    def _draw_sleep_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
-        draw.line((x0 + 1, y0 + 1, x1 - 1, y0 + 1), fill=fill, width=1)
-        draw.line((x1 - 1, y0 + 1, x0 + 1, y1 - 1), fill=fill, width=1)
-        draw.line((x0 + 1, y1 - 1, x1 - 1, y1 - 1), fill=fill, width=1)
+    def _draw_sleep_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
+        draw.line((x0, y0, x1, y0), fill=stroke, width=1)
+        draw.line((x1, y0, x0, y1), fill=stroke, width=1)
+        draw.line((x0, y1, x1, y1), fill=stroke, width=1)
 
     @staticmethod
-    def _draw_wake_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, fill: int) -> None:
+    def _draw_wake_icon(draw: ImageDraw.ImageDraw, x0: int, y0: int, x1: int, y1: int, stroke: int) -> None:
         cx = (x0 + x1) // 2
         cy = (y0 + y1) // 2
-        draw.ellipse((cx - 2, cy - 2, cx + 2, cy + 2), outline=fill)
-        draw.line((cx, y0 + 1, cx, cy - 3), fill=fill, width=1)
-        draw.line((cx, cy + 3, cx, y1 - 1), fill=fill, width=1)
-        draw.line((x0 + 1, cy, cx - 3, cy), fill=fill, width=1)
-        draw.line((cx + 3, cy, x1 - 1, cy), fill=fill, width=1)
+        draw.line((cx, y0, cx, y1), fill=stroke, width=1)
+        draw.line((x0, cy, x1, cy), fill=stroke, width=1)
 
 
 class ScreenRenderer:
