@@ -25,14 +25,22 @@
 </section>
 
 <section class="stack" id="quick-start">
-  {{ section_header("Quick Start", "Bootstrap from terminal or continue with the form below.", "quick-start-heading") }}
+  {{ section_header("Quick Start", "Clone with Git, install in a virtual environment, then continue with the form below.", "quick-start-heading") }}
   {% set quickstart_commands -%}
-$ curl -fsSL https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install | bash
-$ clawgotchi
-PS> irm https://<YOUR_DOMAIN_OR_RAW_GIT_URL>/install.ps1 | iex
-PS> & "$env:LOCALAPPDATA\Clawgotchi\bin\clawgotchi.ps1"
+$ git clone https://github.com/DasLukas/Clawgotchi.git
+$ cd Clawgotchi
+$ python3 -m venv .venv
+$ source .venv/bin/activate
+$ python -m pip install -e ".[dev]"
+$ python main.py
+PS> git clone https://github.com/DasLukas/Clawgotchi.git
+PS> cd Clawgotchi
+PS> py -3.11 -m venv .venv
+PS> .\.venv\Scripts\Activate.ps1
+PS> python -m pip install -e ".[dev]"
+PS> python .\main.py
   {%- endset %}
-  {{ code_block(quickstart_commands, "Bootstrap Commands") }}
+  {{ code_block(quickstart_commands, "Manual Setup Commands") }}
 </section>
 
 <section class="stack">

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ARCH_DOC_PATH="docs/ARCHITECTURE.md"
 
 # Keep this list aligned with docs/ARCHITECTURE.md section 16.
-RELEVANT_PATH_REGEX='^(app/|core/|plugins/|themes/|config/|clawgotchi/|main\.py$|install\.sh$|update\.sh$)'
+RELEVANT_PATH_REGEX='^(app/|core/|plugins/|themes/|config/|clawgotchi/|main\.py$)'
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0

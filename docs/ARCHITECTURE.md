@@ -230,31 +230,17 @@ Runtime pipeline:
 - Presentation layer does not mutate domain directly; all state changes go through services.
 - Infrastructure adapters must not leak persistence/framework concerns into domain models.
 
-## Installation and Update Scripts
+## Installation and Update Operations
 
-Install entrypoints:
-- `install` (Unix-like shells)
-- `install.ps1` (PowerShell)
-- `scripts/install_bootstrap.sh`
-- `scripts/install_bootstrap.ps1`
-- shared logic: `scripts/common_install.py`
+Install and update are intentionally manual (Git-based) and are no longer handled by repository-managed bootstrap/update scripts.
 
-Update entrypoint:
-- `update.sh`
+Operational flow:
+- Clone repository into a user-writable path.
+- Create and use a local virtual environment.
+- Install with editable mode (`python -m pip install -e .` or `python -m pip install -e \".[dev]\"`).
+- Update by running `git pull --ff-only` in the checkout and reinstalling editable dependencies.
 
-Update modes:
-- Desktop mode (default): delegates to bootstrap installer for managed workspace updates (`<runtime_home>/src`), including git sync and runtime re-provisioning.
-- Desktop local mode (`--local-repo` or `CLWG_FORCE_LOCAL_REPO=1`): updates the current checkout instead of managed workspace.
-- Desktop no-sync mode (`--no-sync-git` or `CLWG_SYNC_GIT=0`): skips git sync and only refreshes virtualenv/install.
-- Root/Pi mode: keeps service-oriented update flow with status files and optional service restart/reboot handling.
-- Private repo SSH access is supported through `CLAW_GIT_SSH_COMMAND` or `CLAW_GIT_SSH_KEY`.
-- Update recovery uses Python >=3.11 only; interpreter can be overridden via `CLAW_BOOTSTRAP_PYTHON`.
-
-Raspberry Pi timer/service installs set `CLWG_SYNC_GIT=1` and `CLWG_FORCE_LOCAL_REPO=1` in generated update helper to keep scheduled remote sync behavior on the Pi checkout.
-
-Bootstrap repository sync behavior:
-- Managed source update failures trigger automatic backup (`<src>.backup.<timestamp>`) and clean re-clone.
-- Non-git managed source directories are also backed up and replaced.
+This removes script-specific orchestration from the architecture and keeps update behavior explicit and host-tool driven.
 
 ## 16. Architecture-Relevant Path Scope and Change Notes
 - Architecture-relevant paths for commit checks:
@@ -264,10 +250,11 @@ Bootstrap repository sync behavior:
   - `themes/`
   - `config/`
   - `clawgotchi/`
-- `main.py`
-- `install.sh`
-- `update.sh`
+  - `main.py`
+- 2026-02-21: Removed repository-managed install/update script architecture (`install*`, `update.sh`, bootstrap helpers, and web-triggered update endpoints). Installation and updates now follow manual Git + virtualenv workflows documented in README.
 - 2026-02-13: Reworked install/update behavior for dedicated per-user host workspace paths and managed workspace defaults, including update delegation, self-healing venv reinstall, and bootstrap auto re-clone for broken managed checkouts.
 - 2026-02-13: Simplified desktop updates to a bootstrap-driven managed workflow, preserved private SSH remotes by default, and added explicit SSH auth environment hooks (`CLAW_GIT_SSH_COMMAND` / `CLAW_GIT_SSH_KEY`).
 - 2026-02-13: Hardened installer/update shell behavior for stdin execution and strict-mode array handling (`set -u`), and improved Python interpreter resolution on macOS bootstrap installs.
 - 2026-02-13: Removed the three decorative dots below the dashboard display by deleting the `tamagotchi-buttons` markup from `app/presentation/templates/dashboard.html`. This is presentation-only and does not affect module boundaries, APIs, data flow, persistence, or plugin architecture.
+- 2026-02-13: Replaced the framebuffer menu rendering from a left vertical sidebar to a bottom horizontal icon bar in `app/application/render/layout.py` and `app/application/render/screen_renderer.py`, with corresponding renderer wiring/test updates. This is a UI layout change inside the existing render pipeline and does not alter layering, persistence, plugin contracts, or API endpoints.
+- 2026-02-13: Updated virtual dashboard control buttons in `app/presentation/templates/dashboard.html` to icon labels (`◀`, `▶`, `✓`, `✦`) with minor typography tuning in `app/presentation/static/styles.css`. This is presentation-only and does not alter APIs, input routing, persistence, or architecture boundaries.

@@ -189,8 +189,6 @@ Relevant architecture paths:
 - `config/**`
 - `clawgotchi/**`
 - `main.py`
-- `install.sh`
-- `update.sh`
 
 One-time hook setup:
 

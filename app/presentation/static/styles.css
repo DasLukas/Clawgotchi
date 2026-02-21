@@ -918,9 +918,10 @@ th {
   border-radius: 999px;
   background: linear-gradient(180deg, #172435, #0e1824);
   color: #eaf1f9;
-  font-size: 0.78rem;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
+  line-height: 1;
   padding: 0.45rem 0.35rem;
   cursor: pointer;
   transition: transform 90ms ease, border-color 120ms ease;

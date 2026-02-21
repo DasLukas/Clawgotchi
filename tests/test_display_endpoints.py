@@ -150,8 +150,8 @@ def test_input_button_endpoint_accepts_valid_button(tmp_path: Path) -> None:
         assert bad_response.status_code == 400
 
 
-def test_sidebar_is_rendered_into_framebuffer_output(tmp_path: Path) -> None:
-    database_path = tmp_path / "sidebar-frame.db"
+def test_bottom_menu_bar_is_rendered_into_framebuffer_output(tmp_path: Path) -> None:
+    database_path = tmp_path / "menu-bar-frame.db"
     app = create_app(
         {
             "database_url": f"sqlite:///{database_path}",
@@ -168,9 +168,9 @@ def test_sidebar_is_rendered_into_framebuffer_output(tmp_path: Path) -> None:
         with Image.open(BytesIO(response.content)) as image:
             mono = image.convert("1")
             width, height = mono.size
-            sidebar_probe_width = min(72, max(1, int(width * 0.25)))
-            sidebar = mono.crop((0, 0, sidebar_probe_width, height))
+            menu_probe_height = min(48, max(1, int(height * 0.28)))
+            menu_bar = mono.crop((0, height - menu_probe_height, width, height))
 
             # In mode "1", black pixel is 0.
-            black_pixels = sum(1 for value in sidebar.getdata() if value == 0)
+            black_pixels = sum(1 for value in menu_bar.getdata() if value == 0)
             assert black_pixels > 0

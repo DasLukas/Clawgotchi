@@ -10,7 +10,7 @@ from app.application.input.router import InputRouter
 from app.application.pet.pet_sprite_renderer import PetSpriteRenderer
 from app.application.ports.display import DisplayCapabilities
 from app.application.render.layout import LayoutCalculator
-from app.application.render.screen_renderer import MenuSidebarRenderer, RenderPayload, ScreenRenderer
+from app.application.render.screen_renderer import MenuBarRenderer, RenderPayload, ScreenRenderer
 from app.application.ui.menu_controller import MenuController, MenuSnapshot
 from app.domain.models.pet_state import PetState
 from app.domain.ui.menu import MenuEntry
@@ -62,7 +62,7 @@ class RenderService:
 
         self._screen_renderer = ScreenRenderer(
             layout_calculator=LayoutCalculator(),
-            menu_sidebar_renderer=MenuSidebarRenderer(),
+            menu_bar_renderer=MenuBarRenderer(),
             pet_sprite_renderer=PetSpriteRenderer(theme_loader=theme_loader),
         )
 
